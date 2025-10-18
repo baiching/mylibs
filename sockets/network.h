@@ -1,8 +1,3 @@
-/**
- * Created by Uthowaipru Chowdhury Baiching on 10/15/2025.
- * This is the lowest layer that handles raw socket operations
-*/
-
 #ifndef NETWORK_H
 #define NETWORK_H
 
@@ -14,12 +9,20 @@ typedef SOCKET socket_t;
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <unistd.h>
+#include <errno.h>
 typedef int socket_t;
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// To store buffer better, this way makes the buffer more flexible
+typedef struct {
+    char *buffer;
+    size_t size;
+} data;
 
 // return codes
 typedef enum {
@@ -62,18 +65,47 @@ network_result network_connect_timeout(const char *ip, int port, int timeout_ms)
 int network_send(socket_t socket, const void *data, size_t size);
 int network_recv(socket_t socket, void *data, size_t size);
 
-// cleanup
+// closing socket
 void network_close(socket_t socket);
 
 // Utilities
 int network_set_nonblocking(socket_t sock);  // TODO : later
 int network_would_block(void);               // TODO : later
 
-#ifdef __cplusplus
+
+#ifdef NETWORK_IMPLEMENTATION
+
+#ifdef _WIN32
+    static WSADATA wsaData;
+#endif
+
+int network_init(void) {
+#ifdef _WIN32
+    return WSAStartup(MAKEWORD(2, 2), &wsa_data);
+#else
+    return 0;
+#endif
+}
+
+void network_cleanup(void) {
+#ifdef _WIN32
+    WSACleanup();
+#else
+    return 0;
+#endif
+}
+
+void network_close(socket_t socket) {
+#ifdef _WIN32
+    closesocket(socket);
+#else
+    close(socket);
+#endif
 }
 #endif
 
-
-
+#ifdef __cplusplus
+}
+#endif
 
 #endif //NETWORK_H
