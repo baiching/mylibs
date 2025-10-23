@@ -11,6 +11,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 typedef SOCKET socket_t;
+typedef int socklen_t;
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -110,7 +111,7 @@ network_result network_listen_on(const char *ip, int port); // specific interfac
 socket_t network_accept(struct sockaddr_in *client_data); // accept connection
 
 // client side
-network_result network_connect(const char *ip, int port);
+int network_connect(const struct addrinfo *server_address);
 network_result network_connect_timeout(const char *ip, int port, int timeout_ms);
 
 // data transfer
@@ -344,12 +345,11 @@ inline network_result network_listen_on(const char *ip, int port) {
 }
 
 inline socket_t network_accept(struct sockaddr_in *client_data) {
-    // TODO
     socklen_t client_len = sizeof(struct sockaddr_in);
     socket_t client_socket = accept(GLOBAL_SOCKET, (struct sockaddr *) client_data, &client_len);
 
+#ifdef _WIN32
     if(client_socket == INVALID_SOCKET) {
-        #ifdef _WIN32
         int err = WSAGetLastError();
 
         switch(err) {
@@ -362,7 +362,7 @@ inline socket_t network_accept(struct sockaddr_in *client_data) {
             case WSAEFAULT:
                 printf("The addrlen parameter is too small or addr is not a valid part of the user address space.\n");
                 break;
-            cae WSAEINTR:
+            case WSAEINTR:
                 printf("A blocking Windows Sockets 1.1 call was canceled through WSACancelBlockingCall.\n");
                 break;
             case WSAEINVAL:
@@ -394,8 +394,9 @@ inline socket_t network_accept(struct sockaddr_in *client_data) {
                 break;
 
         }
+    }
 
-        #else
+#else
         switch(errno) {
             case EAGAIN:
                 printf("The socket is marked nonblocking and no connections are present to be accepted.\n");
@@ -440,9 +441,37 @@ inline socket_t network_accept(struct sockaddr_in *client_data) {
                 printf("Unknown error code: %d\n", error_code);
                 break;
         }
+    return -1;
+#endif
+
+    return client_socket;
+}
+
+inline int network_connect(const struct addrinfo *server_address) {
+    if (server_address == NULL) {
+        printf("Address is NULL.\n");
         return -1;
     }
-    return client_socket;
+
+    const socket_t client_socket = socket(server_address->ai_family, server_address->ai_socktype, server_address->ai_protocol);
+    if (client_socket == INVALID_SOCKET) {
+        printf("Socket creation failed.\n");
+        return -1;
+    }
+
+    if (connect(client_socket, server_address->ai_addr, server_address->ai_addrlen) == 0) {
+        printf("Socket successfully connected.\n");
+        return client_socket;
+    }
+    else {
+        printf("Connection failed.\n");
+        network_close(client_socket);
+        return -1;
+    }
+}
+
+inline network_result network_send(socket_t socket, const void *data, size_t size) {
+
 }
 
 inline void network_close(socket_t socket) {
