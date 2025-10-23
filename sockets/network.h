@@ -1,31 +1,44 @@
-/***
- *This API is not a general purpose TCP API, it's exclusively designed for file transfer
+/**
+ * @file network.h
+ * @brief Minimal Linux Socket Library - Lightweight TCP networking for Linux
+ * @version 1.0.0
+ * 
+ * Header-only socket library providing clean TCP networking APIs for Linux.
+ * 
+ * Available APIs:
+ * Server:
+ *   • network_listen()       - Listen on port (all interfaces)
+ *   • network_listen_on()    - Listen on specific IP and port  
+ *   • network_accept()       - Accept incoming connections
+ * 
+ * Client:
+ *   • network_connect()      - Connect to server using addrinfo
+ * 
+ * Data Transfer:
+ *   • network_send()         - Send null-terminated string
+ *   • network_recv()         - Receive data into buffer
+ *   • network_close()        - Close socket connection
+ * 
+ * 
  */
 
 #ifndef NETWORK_H
 #define NETWORK_H
-#include <stdio.h>
 
-// platform detection
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-typedef SOCKET socket_t;
-typedef int socklen_t;
-#else
+#include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <unistd.h>
 #include <errno.h>
+#include <string.h>
+
 typedef int socket_t;
-#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// socket
-static socket_t GLOBAL_SOCKET = INVALID_SOCKET;
+
+#define BACKLOG 10 //only accepts upto 10 connections
 
 // To store buffer better, this way makes the buffer more flexible
 typedef struct {
@@ -45,25 +58,6 @@ typedef enum {
     SOCKET_CONNECT_FAILED,
     SOCKET_INVALID,
     SOCKET_UNKNOWN_ERROR,
-
-    // Connection errors
-    NETWORK_ERROR_CONNECTION_REFUSED = -1,
-    NETWORK_ERROR_TIMEOUT = -2,
-    NETWORK_ERROR_HOST_UNREACHABLE = -3,
-    NETWORK_ERROR_DNS_FAILURE = -4,
-
-    // Socket errors
-    NETWORK_ERROR_ADDR_IN_USE = -10,
-    NETWORK_ERROR_PERMISSION_DENIED = -11,
-    NETWORK_ERROR_INVALID_SOCKET = -12,
-
-    // System errors
-    NETWORK_ERROR_PLATFORM_INIT_FAILED = -20,
-    NETWORK_ERROR_OUT_OF_MEMORY = -21,
-
-    // Parameter errors
-    NETWORK_ERROR_INVALID_ADDRESS = -30,
-    NETWORK_ERROR_INVALID_PORT = -31
 } network_result;
 
 // core cycle
@@ -72,51 +66,497 @@ void network_cleanup(void);
 
 // server side
 /**
- * @brief It makes the server starts listening. it automatically takes care of socket creation, bind and listen
- * @param port a port address from user
- * @return
- *   NETWORK_SUCCESS = 0 : if the server is successfully listening it will return this flag
- *   SOCKET_CREATE_FAILED = 1: socket failed during creation
- *   SOCKET_BIND_FAILED = 2: failed during bind
- *   SOCKET_LISTEN_FAILED = 3: failed to start listening
- */
-network_result network_listen(int port);
-
-/**
- * @brief This is a special function where user enters specific ip for server to listen
- * @param ip a string ip from user
- * @param port a port address from user
- * @return
- *   NETWORK_SUCCESS = 0 : if the server is successfully listening it will return this flag
- *   SOCKET_CREATE_FAILED = 1: socket failed during creation
- *   SOCKET_BIND_FAILED = 2: failed during bind
- *   SOCKET_LISTEN_FAILED = 3: failed to start listening
- *
- * @note it automatically takes care of socket creation, bind and listen
- */
-network_result network_listen_on(const char *ip, int port); // specific interface
-
-/**
- * @brief it accepts connection requests from client
+ * @brief Creates a TCP server socket that listens for incoming connections on the specified port.
  * 
- * This function extracts the first connection request from the queue of 
- * pending connections for the listening socket, creates a new connected 
- * socket and returns a file descriptor for that socket.
- *
- * @param client_data : expects an empty struct that'll be populated with clients data after system call accept()
- * @return
- *      -1 : upon failure it will return this value
- *      socket_t: variable or file descriptor of new socket from client will be returned
+ * @param port Null-terminated string specifying the port number or service name (e.g., "8080", "http")
+ * @return socket_t On success: valid socket descriptor for accepting connections
+ *                  On failure: -1
+ * 
+ * @details This function creates a TCP server socket bound to all available network interfaces
+ * (both IPv4 and IPv6 if supported) and starts listening for incoming connections.
+ * 
+ * The function performs the following operations:
+ * - Initializes address hints for passive TCP socket
+ * - Resolves local addresses using getaddrinfo() with AI_PASSIVE flag
+ * - Creates a socket with the appropriate address family (IPv4/IPv6)
+ * - Binds the socket to the specified port on all interfaces
+ * - Starts listening for incoming connections with a backlog of 10
+ * - Cleans up allocated resources before returning
+ * 
+ * @note The server listens on all available network interfaces (0.0.0.0 for IPv4, :: for IPv6).
+ * @note The backlog queue size is set to 10 pending connections (see BACKLOG macro).
+ * @note Memory allocated by getaddrinfo() is properly freed before return.
+ * @note On failure, appropriate error messages are printed to stdout.
+ * 
+ * @warning The returned socket must be closed using network_close() when no longer needed.
+ * @warning The port parameter must be a valid null-terminated string.
+ * 
+ * @see network_accept()
+ * @see network_close()
+ * @see BACKLOG
+ * 
+ * @code
+ * // Example: Create a server listening on port 8080
+ * socket_t server_sock = network_listen("8080");
+ * if (server_sock >= 0) {
+ *     printf("Server listening on port 8080\n");
+ *     
+ *     // Accept incoming connections
+ *     socket_t client_sock = network_accept(server_sock, NULL);
+ *     if (client_sock >= 0) {
+ *         // Handle client connection
+ *         network_close(client_sock);
+ *     }
+ *     network_close(server_sock);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Create a server using service name
+ * socket_t server_sock = network_listen("http");
+ * if (server_sock >= 0) {
+ *     printf("Server listening on HTTP port (80)\n");
+ *     // ... use server socket
+ *     network_close(server_sock);
+ * }
+ * @endcode
  */
-socket_t network_accept(struct sockaddr_in *client_data); // accept connection
+socket_t network_listen(const char *port);
+
+/**
+ * @brief Creates a TCP server socket that listens for incoming connections on a specific IP address and port.
+ * 
+ * @param ip Null-terminated string specifying the IP address to bind to (e.g., "192.168.1.100", "::1")
+ * @param port Null-terminated string specifying the port number or service name (e.g., "8080", "http")
+ * @return socket_t On success: valid socket descriptor for accepting connections
+ *                  On failure: -1
+ * 
+ * @details This function creates a TCP server socket bound to a specific network interface
+ * and starts listening for incoming connections. Unlike network_listen(), this function
+ * allows binding to a specific IP address rather than all available interfaces.
+ * 
+ * The function performs the following operations:
+ * - Initializes address hints for passive TCP socket
+ * - Resolves specific address using getaddrinfo() with AI_PASSIVE flag
+ * - Creates a socket with the appropriate address family (IPv4/IPv6)
+ * - Binds the socket to the specified IP address and port
+ * - Starts listening for incoming connections with a backlog of 10
+ * - Cleans up allocated resources before returning
+ * 
+ * @note Use this function when you need to listen on a specific network interface.
+ * @note The backlog queue size is set to 10 pending connections (see BACKLOG macro).
+ * @note Memory allocated by getaddrinfo() is properly freed before return.
+ * @note On failure, appropriate error messages are printed to stdout.
+ * 
+ * @warning The returned socket must be closed using network_close() when no longer needed.
+ * @warning Both ip and port parameters must be valid null-terminated strings.
+ * 
+ * @see network_listen()
+ * @see network_accept()
+ * @see network_close()
+ * @see BACKLOG
+ * 
+ * @code
+ * // Example: Create a server listening on specific IP and port
+ * socket_t server_sock = network_listen_on("192.168.1.100", "8080");
+ * if (server_sock >= 0) {
+ *     printf("Server listening on 192.168.1.100:8080\n");
+ *     
+ *     // Accept incoming connections
+ *     socket_t client_sock = network_accept(server_sock, NULL);
+ *     if (client_sock >= 0) {
+ *         // Handle client connection
+ *         network_close(client_sock);
+ *     }
+ *     network_close(server_sock);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Create an IPv6 server on localhost
+ * socket_t server_sock = network_listen_on("::1", "8080");
+ * if (server_sock >= 0) {
+ *     printf("IPv6 server listening on [::1]:8080\n");
+ *     // ... use server socket
+ *     network_close(server_sock);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Listen on all IPv4 interfaces (alternative to network_listen)
+ * socket_t server_sock = network_listen_on("0.0.0.0", "8080");
+ * if (server_sock >= 0) {
+ *     printf("Server listening on all IPv4 interfaces port 8080\n");
+ *     // ... use server socket
+ *     network_close(server_sock);
+ * }
+ * @endcode
+ */
+socket_t network_listen_on(const char *ip, const char *port); // specific interface
+
+/**
+ * @brief Accepts an incoming connection on a listening server socket.
+ * 
+ * @param sockfd Listening socket descriptor returned by network_listen() or network_listen_on()
+ * @param client_storage Pointer to sockaddr_storage structure to receive client address information
+ * @return socket_t On success: new socket descriptor for communicating with the client
+ *                  On failure: -1
+ * 
+ * @details This function extracts the first connection request from the queue of pending connections
+ * for the listening socket, creates a new connected socket, and returns a file descriptor for
+ * that socket. The new socket is used for communication with the client, while the original
+ * listening socket remains open to accept additional connections.
+ * 
+ * The client's address information (IP address and port) is stored in the provided
+ * sockaddr_storage structure, which can be used to identify the connecting client.
+ * 
+ * @note This function blocks until a connection is available, unless the socket is set to non-blocking mode.
+ * @note The original listening socket (sockfd) remains open and should continue to be used for accepting new connections.
+ * @note The new socket (return value) is dedicated to the specific client and should be closed when the connection ends.
+ * @note On successful connection, "Client connected." is printed to stdout.
+ * 
+ * @warning The sockfd parameter must be a valid socket descriptor from network_listen() or network_listen_on().
+ * @warning The client_storage parameter must point to a valid sockaddr_storage structure.
+ * @warning The returned client socket must be closed using network_close() when the connection ends.
+ * 
+ * @see network_listen()
+ * @see network_listen_on()
+ * @see network_close()
+ * @see network_send()
+ * @see network_recv()
+ * 
+ * @code
+ * // Example: Accept connections in a server loop
+ * socket_t server_sock = network_listen("8080");
+ * if (server_sock >= 0) {
+ *     printf("Server listening on port 8080\n");
+ *     
+ *     while (1) {
+ *         struct sockaddr_storage client_addr;
+ *         socket_t client_sock = network_accept(server_sock, &client_addr);
+ *         
+ *         if (client_sock >= 0) {
+ *             // Handle client connection in new thread or process
+ *             char buffer[1024];
+ *             int bytes = network_recv(client_sock, buffer, sizeof(buffer));
+ *             if (bytes > 0) {
+ *                 network_send(client_sock, "Message received");
+ *             }
+ *             network_close(client_sock);
+ *         }
+ *     }
+ *     network_close(server_sock);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Get client address information
+ * struct sockaddr_storage client_addr;
+ * socket_t client_sock = network_accept(server_sock, &client_addr);
+ * 
+ * if (client_sock >= 0) {
+ *     char client_ip[INET6_ADDRSTRLEN];
+ *     if (client_addr.ss_family == AF_INET) {
+ *         struct sockaddr_in *s = (struct sockaddr_in *)&client_addr;
+ *         inet_ntop(AF_INET, &s->sin_addr, client_ip, sizeof(client_ip));
+ *     } else {
+ *         struct sockaddr_in6 *s = (struct sockaddr_in6 *)&client_addr;
+ *         inet_ntop(AF_INET6, &s->sin6_addr, client_ip, sizeof(client_ip));
+ *     }
+ *     printf("Client connected from: %s\n", client_ip);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Accept without storing client address (if not needed)
+ * socket_t client_sock = network_accept(server_sock, NULL);
+ * if (client_sock >= 0) {
+ *     // Client connected, but we don't care about their address
+ *     // ... handle connection
+ *     network_close(client_sock);
+ * }
+ * @endcode
+ */
+socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storage); // accept connection
 
 // client side
-int network_connect(const struct addrinfo *server_address);
+
+/**
+ * @brief Establishes a connection to a remote server using pre-resolved address information.
+ * 
+ * @param server_address Pointer to addrinfo structure containing pre-resolved server address information
+ * @return socket_t On success: valid socket descriptor for communicating with the server
+ *                  On failure: -1
+ * 
+ * @details This function creates a client socket and establishes a TCP connection to a remote server
+ * using pre-resolved address information from getaddrinfo(). The server_address parameter should
+ * contain the complete address information including family, socket type, protocol and address data.
+ * 
+ * The function performs the following operations:
+ * - Creates a socket matching the server address family and type
+ * - Attempts to connect to the remote server using the provided address information
+ * - Returns the connected socket on success, or cleans up and returns -1 on failure
+ * 
+ * @note This function is typically used with address information obtained from getaddrinfo().
+ * @note The function blocks until the connection is established or fails.
+ * @note On successful connection, "Socket successfully connected." is printed to stdout.
+ * @note The returned socket must be closed with network_close() when no longer needed.
+ * 
+ * @warning The server_address parameter must be a valid addrinfo structure from getaddrinfo().
+ * @warning The server_address should contain complete and valid address information.
+ * @warning The returned socket descriptor must be closed using network_close().
+ * 
+ * @see getaddrinfo()
+ * @see network_close()
+ * @see network_send()
+ * @see network_recv()
+ * 
+ * @code
+ * // Example: Connect to a server using getaddrinfo
+ * struct addrinfo hints, *res;
+ * memset(&hints, 0, sizeof(hints));
+ * hints.ai_family = AF_UNSPEC;
+ * hints.ai_socktype = SOCK_STREAM;
+ * 
+ * if (getaddrinfo("example.com", "http", &hints, &res) == 0) {
+ *     socket_t sock = network_connect(res);
+ *     if (sock >= 0) {
+ *         // Successfully connected to example.com:80
+ *         network_send(sock, "GET / HTTP/1.0\r\n\r\n");
+ *         // ... receive response
+ *         network_close(sock);
+ *     }
+ *     freeaddrinfo(res);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Connect to specific IP and port
+ * struct addrinfo hints, *res;
+ * memset(&hints, 0, sizeof(hints));
+ * hints.ai_family = AF_UNSPEC;
+ * hints.ai_socktype = SOCK_STREAM;
+ * 
+ * if (getaddrinfo("192.168.1.100", "8080", &hints, &res) == 0) {
+ *     socket_t sock = network_connect(res);
+ *     if (sock >= 0) {
+ *         printf("Connected to server at 192.168.1.100:8080\n");
+ *         // ... communicate with server
+ *         network_close(sock);
+ *     }
+ *     freeaddrinfo(res);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Try multiple addresses until one succeeds
+ * struct addrinfo hints, *res, *p;
+ * memset(&hints, 0, sizeof(hints));
+ * hints.ai_family = AF_UNSPEC;
+ * hints.ai_socktype = SOCK_STREAM;
+ * 
+ * if (getaddrinfo("example.com", "http", &hints, &res) == 0) {
+ *     for (p = res; p != NULL; p = p->ai_next) {
+ *         socket_t sock = network_connect(p);
+ *         if (sock >= 0) {
+ *             printf("Connected using address family: %d\n", p->ai_family);
+ *             // ... use the connection
+ *             network_close(sock);
+ *             break;
+ *         }
+ *     }
+ *     freeaddrinfo(res);
+ * }
+ * @endcode
+ */
+socket_t network_connect(const struct addrinfo *server_address);
 network_result network_connect_timeout(const char *ip, int port, int timeout_ms);
 
 // data transfer
-int network_send(socket_t socket, const void *data, size_t size);
-int network_recv(socket_t socket, void *data, size_t size);
+
+/**
+ * @brief Sends a null-terminated string over a connected socket.
+ * 
+ * @param socketfd Connected socket descriptor for sending data
+ * @param data Null-terminated string to send over the socket
+ * @return int On success: number of bytes actually sent
+ *             On failure: -1\n
+ *             On empty string: 0 (not an error)
+ * 
+ * @details This function sends a null-terminated string over an established socket connection.
+ * The function automatically calculates the string length using strlen() and sends the entire
+ * content (excluding the null terminator) to the remote endpoint.
+ * 
+ * The function performs the following operations:
+ * - Validates the socket descriptor and data pointer
+ * - Calculates the string length using strlen()
+ * - Sends the data using the send() system call with flags=0
+ * - Returns the actual number of bytes sent
+ * 
+ * @note This function is designed for sending null-terminated strings only.
+ * @note For binary data or explicit length control, consider a different API.
+ * @note The return value may be less than the string length due to partial sends (normal TCP behavior).
+ * @note Sending an empty string returns 0 (not an error).
+ * @note The function uses blocking I/O by default (flags=0).
+ * 
+ * @warning The socket must be in a connected state (established TCP connection).
+ * @warning The data parameter must be a valid null-terminated string.
+ * @warning Partial sends are normal TCP behavior and not treated as errors.
+ * 
+ * @see network_recv()
+ * @see network_connect()
+ * @see network_accept()
+ * 
+ * @code
+ * // Example: Send a simple message
+ * socket_t sock = network_connect(server_addr);
+ * if (sock >= 0) {
+ *     int bytes_sent = network_send(sock, "Hello Server!");
+ *     if (bytes_sent > 0) {
+ *         printf("Sent %d bytes to server\n", bytes_sent);
+ *     }
+ *     network_close(sock);
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Send multiple messages in a chat application
+ * const char *messages[] = {"USER Alice", "JOIN #general", "MSG Hello everyone!"};
+ * 
+ * for (int i = 0; i < 3; i++) {
+ *     int bytes = network_send(sock, messages[i]);
+ *     if (bytes < 0) {
+ *         printf("Failed to send message: %s\n", messages[i]);
+ *         break;
+ *     }
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Handle partial sends (though rare in practice)
+ * const char *long_message = "This is a very long message...";
+ * int bytes_sent = network_send(sock, long_message);
+ * 
+ * if (bytes_sent >= 0) {
+ *     if (bytes_sent < strlen(long_message)) {
+ *         printf("Partial send: %d of %zu bytes sent\n", 
+ *                bytes_sent, strlen(long_message));
+ *         // In production, you might want to resend remaining data
+ *     } else {
+ *         printf("Full message sent successfully\n");
+ *     }
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Send empty string (edge case)
+ * int bytes = network_send(sock, "");
+ * if (bytes == 0) {
+ *     printf("Empty string sent (not an error)\n");
+ * }
+ * @endcode
+ */
+int network_send(socket_t socket, const void *data);
+
+/**
+ * @brief Receives data from a connected socket into a provided buffer.
+ * 
+ * @param socketfd Connected socket descriptor for receiving data
+ * @param data Pointer to buffer where received data will be stored
+ * @param buffer_size Maximum number of bytes that can be stored in the buffer
+ * @return int On success: number of bytes actually received (0 indicates connection closed)
+ *             On failure: -1
+ * 
+ * @details This function receives data from an established socket connection and stores it
+ * in the provided buffer. The function will receive up to buffer_size bytes, but may return
+ * fewer bytes if less data is currently available.
+ * 
+ * The function performs the following operations:
+ * - Validates the socket descriptor, buffer pointer, and buffer size
+ * - Receives available data using the recv() system call with flags=0
+ * - Returns the actual number of bytes received
+ * 
+ * @note The received data is stored as raw bytes - no null terminator is added automatically.
+ * @note A return value of 0 indicates the connection has been closed gracefully by the remote peer.
+ * @note The return value may be less than buffer_size due to partial receives (normal TCP behavior).
+ * @note The function uses blocking I/O by default (will wait until data is available or connection closes).
+ * @note For string data, the caller must add a null terminator if needed.
+ * 
+ * @warning The socket must be in a connected state (established TCP connection).
+ * @warning The data buffer must be writable and large enough to hold received data.
+ * @warning The received data is not null-terminated - caller must handle this if working with strings.
+ * @warning Partial receives are normal TCP behavior and not treated as errors.
+ * 
+ * @see network_send()
+ * @see network_connect()
+ * @see network_accept()
+ * 
+ * @code
+ * // Example: Receive data into a buffer
+ * char buffer[1024];
+ * int bytes_received = network_recv(sock, buffer, sizeof(buffer));
+ * 
+ * if (bytes_received > 0) {
+ *     // Add null terminator for string processing
+ *     buffer[bytes_received] = '\0';
+ *     printf("Received %d bytes: %s\n", bytes_received, buffer);
+ * } else if (bytes_received == 0) {
+ *     printf("Connection closed by remote peer\n");
+ * } else {
+ *     printf("Receive error\n");
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Receive loop for complete message
+ * char buffer[1024];
+ * int total_received = 0;
+ * 
+ * while (total_received < sizeof(buffer) - 1) {
+ *     int bytes = network_recv(sock, buffer + total_received, 
+ *                             sizeof(buffer) - total_received);
+ *     if (bytes <= 0) break;
+ *     total_received += bytes;
+ *     
+ *     // Check if we have a complete message (example: newline terminated)
+ *     if (buffer[total_received - 1] == '\n') {
+ *         buffer[total_received] = '\0';
+ *         printf("Complete message: %s", buffer);
+ *         break;
+ *     }
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Handle connection closure
+ * char buffer[256];
+ * while (1) {
+ *     int bytes = network_recv(sock, buffer, sizeof(buffer));
+ *     if (bytes > 0) {
+ *         // Process received data
+ *         buffer[bytes] = '\0';
+ *         printf("Received: %s", buffer);
+ *     } else if (bytes == 0) {
+ *         printf("Server closed the connection\n");
+ *         break;
+ *     } else {
+ *         printf("Receive error, closing connection\n");
+ *         break;
+ *     }
+ * }
+ * @endcode
+ * 
+ * @code
+ * // Example: Binary data reception
+ * uint8_t binary_data[512];
+ * int bytes = network_recv(sock, binary_data, sizeof(binary_data));
+ * if (bytes > 0) {
+ *     // Process binary data (no null terminator needed)
+ *     printf("Received %d bytes of binary data\n", bytes);
+ * }
+ * @endcode
+ */
+int network_recv(socket_t socket, void *data);
 
 // closing socket
 void network_close(socket_t socket);
@@ -128,326 +568,105 @@ int network_would_block(void);               // TODO : later
 
 #ifdef NETWORK_IMPLEMENTATION
 
-#ifdef _WIN32
-    static WSADATA wsaData;
-#endif
+inline socket_t network_listen(const char *port) {
+    struct addrinfo hints, *res;
+    socket_t sockfd;
 
-inline int network_init(void) {
-#ifdef _WIN32
-    return WSAStartup(MAKEWORD(2, 2), &wsa_data);
-#else
-    return 0;
-#endif
+    // clearnig the memory to load by getaddrinfo
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; // ipv4 or ipv6
+    hints.ai_socktype = SOCK_STREAM; // Since TCP, we'll be using streaming to transfer the data
+    hints.ai_flags = AI_PASSIVE; // fill up any available ip 
+
+    getaddrinfo(NULL, port, &hints, &res);
+
+    // bind the socket to the ip and port
+    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    // check if socket is created 
+    if(sockfd < 0) {
+        printf("Socket creation failed at Listen API.\n");
+        freeaddrinfo(res);
+        return -1;
+    }
+    if(bind(sockfd, res->ai_addr, res->ai_addrlen) < 0) {
+        printf("Bind has failed!\n");
+        freeaddrinfo(res);
+        network_close(sockfd);
+        return -1;
+    }
+
+    if(listen(sockfd, BACKLOG) < 0) {
+        printf("Listen has failed!\n");
+        freeaddrinfo(res);
+        network_close(sockfd);
+        return -1;
+    }
+
+    freeaddrinfo(res);
+    
+    return sockfd;
 }
 
-inline void network_cleanup(void) {
-#ifdef _WIN32
-    WSACleanup();
-#else
-    return 0;
-#endif
+inline socket_t network_listen_on(const char *ip, const char *port) {
+    struct addrinfo hints, *res;
+    socket_t sockfd;
+
+    // clearnig the memory to load by getaddrinfo
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; // ipv4 or ipv6
+    hints.ai_socktype = SOCK_STREAM; // Since TCP, we'll be using streaming to transfer the data
+    hints.ai_flags = AI_PASSIVE; // fill up any available ip 
+
+    getaddrinfo(ip, port, &hints, &res);
+
+    // bind the socket to the ip and port
+    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    // check if socket is created 
+     if(sockfd < 0) {
+        printf("Socket creation failed at Listen API.\n");
+        freeaddrinfo(res);
+        return -1;
+    }
+    if(bind(sockfd, res->ai_addr, res->ai_addrlen) < 0) {
+        printf("Bind has failed!\n");
+        freeaddrinfo(res);
+        network_close(sockfd);
+        return -1;
+    }
+
+    if(listen(sockfd, BACKLOG) < 0) {
+        printf("Listen has failed!\n");
+        freeaddrinfo(res);
+        network_close(sockfd);
+        return -1;
+    }
+
+    freeaddrinfo(res);
+    
+    return sockfd;
 }
 
-inline network_result network_listen(int port) {
-        socket_t server_fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (server_fd == INVALID_SOCKET) {
-            printf("Socket creation failed.\n");
-            return SOCKET_CREATE_FAILED;
-        }
-        struct sockaddr_in server_address;
-        server_address.sin_family = AF_INET;
-        server_address.sin_port = htons(port);
-        server_address.sin_addr.s_addr = INADDR_ANY;
-
-    // bind the address to the given ip and port above
-    if (bind(server_fd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
-        #ifdef _WIN32
-                int err = WSAGetLastError();
-                switch (err) {
-                    case WSAEADDRINUSE:
-                        printf("Port %d is already in use.\n", port);
-                        break;
-                    case WSAEACCES:
-                        printf("Port %d is denied.\n", port);
-                        break;
-                    default:
-                        printf("Port %d is unavailable.\n", port);
-                }
-        network_close(server_fd);
-        #else
-                if (errno == EADDRINUSE) {
-                    printf("Port %d is already in use.\n", port);
-                }
-                else if (errno ==EACCES) {
-                    printf("Port %d is denied.\n", port);
-                }
-        network_close(server_fd);
-        #endif
-
-        return SOCKET_BIND_FAILED;
+inline socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storage) {
+    if (socktfd < 0) {
+        printf("socket file descriptor is NULL.\n");
+        return -1;
     }
-
-    // SOMAXCONN : maximum baklog by the system
-    if (listen(server_fd, SOMAXCONN) < 0) {
-        #ifdef _WIN32
-        int err = WSAGetLastError();
-        switch (err) {
-            case WSAEINVAL:          // Socket not bound or already listening
-                printf("Socket not bound or already listening\n");
-                break;
-            case WSAENOTCONN:        // Socket not connected (for connection-oriented)
-                printf("Socket is not connected\n");
-                break;
-            case WSAEADDRINUSE:      // Address already in use
-                printf("Address already in use\n");
-                break;
-            case WSAEISCONN:         // Socket already connected
-                printf("Socket is already connected\n");
-                break;
-            case WSAEMFILE:          // No more socket descriptors available
-                printf("No more socket descriptors available\n");
-                break;
-            case WSAENOBUFS:         // No buffer space available
-                printf("No buffer space available\n");
-                break;
-            case WSAENOTSOCK:        // Not a socket
-                printf("Descriptor is not a socket\n");
-                break;
-            default:
-                printf("listen failed with error: %d\n", err);
-
-        }
-        #else
-        switch (errno) {
-            case EADDRINUSE:  // Address already in use
-                printf("Another socket is already listening on same port\n");
-                break;
-            case EBADF:       // Invalid socket descriptor
-                printf("Invalid socket file descriptor\n");
-                break;
-            case ENOTSOCK:    // Not a socket
-                printf("File descriptor is not a socket\n");
-                break;
-            case EOPNOTSUPP:  // Socket doesn't support listening
-                printf("Socket type does not support listening\n");
-                break;
-            case EINVAL:      // Socket already connected or not bound
-                printf("Socket is already connected or not properly bound\n");
-                break;
-            default:
-                perror("listen failed");
-        }
-
-        #endif
-        network_close(server_fd);
-        return SOCKET_LISTEN_FAILED;
+    if (client_storage == NULL) {
+        printf("Address is NULL.\n");
+        return -1;
     }
-    GLOBAL_SOCKET = server_fd;
-    return NETWORK_SUCCESS;
+    socklen_t address_len = sizeof(*client_storage);
+    socket_t newfd = accept(socktfd, (struct sockaddr *) client_storage, &address_len);
+
+    if (newfd < 0) {
+        printf("Accept has failed.\n");
+        return -1;
+    }
+    printf("Client connected.\n");
+    return newfd;
 }
 
-inline network_result network_listen_on(const char *ip, int port) {
-    socket_t server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == INVALID_SOCKET) {
-        printf("Socket creation failed.\n");
-        return SOCKET_CREATE_FAILED;
-    }
-    struct sockaddr_in server_address;
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
-    server_address.sin_addr.s_addr = inet_addr(ip);
-
-    // bind the address to the given ip and port above
-    if (bind(server_fd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
-        #ifdef _WIN32
-                int err = WSAGetLastError();
-                switch (err) {
-                    case WSAEADDRINUSE:
-                        printf("IP:Port %s:%d is already in use.\n", ip, port);
-                        break;
-                    case WSAEACCES:
-                        printf("Port %d is denied.\n", port);
-                        break;
-                    default:
-                        printf("Port %d is unavailable.\n", port);
-                }
-        network_close(server_fd);
-        #else
-                if (errno == EADDRINUSE) {
-                    printf("Port %d is already in use.\n", port);
-                }
-                else if (errno ==EACCES) {
-                    printf("Port %d is denied.\n", port);
-                }
-        network_close(server_fd);
-        #endif
-
-        return SOCKET_BIND_FAILED;
-    }
-
-    // SOMAXCONN : maximum baklog by the system
-    if (listen(server_fd, SOMAXCONN) < 0) {
-        #ifdef _WIN32
-        int err = WSAGetLastError();
-        switch (err) {
-            case WSAEINVAL:          // Socket not bound or already listening
-                printf("Socket not bound or already listening\n");
-                break;
-            case WSAENOTCONN:        // Socket not connected (for connection-oriented)
-                printf("Socket is not connected\n");
-                break;
-            case WSAEADDRINUSE:      // Address already in use
-                printf("Address already in use\n");
-                break;
-            case WSAEISCONN:         // Socket already connected
-                printf("Socket is already connected\n");
-                break;
-            case WSAEMFILE:          // No more socket descriptors available
-                printf("No more socket descriptors available\n");
-                break;
-            case WSAENOBUFS:         // No buffer space available
-                printf("No buffer space available\n");
-                break;
-            case WSAENOTSOCK:        // Not a socket
-                printf("Descriptor is not a socket\n");
-                break;
-            default:
-                printf("listen failed with error: %d\n", err);
-
-        }
-        #else
-        switch (errno) {
-            case EADDRINUSE:  // Address already in use
-                printf("Another socket is already listening on same port\n");
-                break;
-            case EBADF:       // Invalid socket descriptor
-                printf("Invalid socket file descriptor\n");
-                break;
-            case ENOTSOCK:    // Not a socket
-                printf("File descriptor is not a socket\n");
-                break;
-            case EOPNOTSUPP:  // Socket doesn't support listening
-                printf("Socket type does not support listening\n");
-                break;
-            case EINVAL:      // Socket already connected or not bound
-                printf("Socket is already connected or not properly bound\n");
-                break;
-            default:
-                perror("listen failed");
-        }
-
-        #endif
-        network_close(server_fd);
-        return SOCKET_LISTEN_FAILED;
-    }
-    GLOBAL_SOCKET = server_fd;
-    return NETWORK_SUCCESS;
-}
-
-inline socket_t network_accept(struct sockaddr_in *client_data) {
-    socklen_t client_len = sizeof(struct sockaddr_in);
-    socket_t client_socket = accept(GLOBAL_SOCKET, (struct sockaddr *) client_data, &client_len);
-
-#ifdef _WIN32
-    if(client_socket == INVALID_SOCKET) {
-        int err = WSAGetLastError();
-
-        switch(err) {
-            case WSANOTINITIALISED:
-                printf("A successful WSAStartup call must occur before using this function.\n");
-                break;
-            case WSAECONNRESET:
-                printf("An incoming connection was indicated, but was subsequently terminated by the remote peer prior to accepting the call.\n");
-                break;
-            case WSAEFAULT:
-                printf("The addrlen parameter is too small or addr is not a valid part of the user address space.\n");
-                break;
-            case WSAEINTR:
-                printf("A blocking Windows Sockets 1.1 call was canceled through WSACancelBlockingCall.\n");
-                break;
-            case WSAEINVAL:
-                printf("The listen function was not invoked prior to accept.\n");
-                break;
-            case WSAEINPROGRESS:
-                printf("A blocking Windows Sockets 1.1 call is in progress, or the service provider is still processing a callback function.\n");
-                break;
-            case WSAEMFILE:
-                printf("The queue is nonempty upon entry to accept and there are no descriptors available.\n");
-                break;
-            case WSAENETDOWN:
-                printf("The network subsystem has failed.\n");
-                break;
-            case WSAENOBUFS:
-                printf("No buffer space is available.\n");
-                break;
-            case WSAENOTSOCK:
-                printf("The descriptor is not a socket.\n");
-                break;
-            case WSAEOPNOTSUPP:
-                printf("The referenced socket is not a type that supports connection-oriented service.\n");
-                break;
-            case WSAEWOULDBLOCK:
-                printf("The socket is marked as nonblocking and no connections are present to be accepted.\n");
-                break;
-            default:
-                printf("Unknown error code: %d\n", error_code);
-                break;
-
-        }
-    }
-
-#else
-        switch(errno) {
-            case EAGAIN:
-                printf("The socket is marked nonblocking and no connections are present to be accepted.\n");
-                break;
-            case EBADF:
-                printf("sockfd is not an open file descriptor.\n");
-                break;
-            case ECONNABORTED:
-                printf("A connection has been aborted.\n");
-                break;
-            case EFAULT:
-                printf("The addr argument is not in a writable part of the user address space.\n");
-                break;
-            case EINTR:
-                printf("The system call was interrupted by a signal that was caught before a valid connection arrived.\n");
-                break;
-            case EINVAL:
-                printf("Socket is not listening for connections, addrlen is invalid, or (accept4()) invalid value in flags.\n");
-                break;
-            case EMFILE:
-                printf("The per-process limit on the number of open file descriptors has been reached.\n");
-                break;
-            case ENFILE:
-                printf("The system-wide limit on the total number of open files has been reached.\n");
-                break;
-            case ENOMEM:
-                printf("Not enough free memory. This often means that the memory allocation is limited by the socket buffer limits.\n");
-                break;
-            case ENOTSOCK:
-                printf("The file descriptor sockfd does not refer to a socket.\n");
-                break;
-            case EOPNOTSUPP:
-                printf("The referenced socket is not of type SOCK_STREAM.\n");
-                break;
-            case EPERM:
-                printf("Firewall rules forbid connection.\n");
-                break;
-            case EPROTO:
-                printf("Protocol error.\n");
-                break;
-            default:
-                printf("Unknown error code: %d\n", error_code);
-                break;
-        }
-    return -1;
-#endif
-
-    return client_socket;
-}
-
-inline int network_connect(const struct addrinfo *server_address) {
+inline socket_t network_connect(const struct addrinfo *server_address) {
     if (server_address == NULL) {
         printf("Address is NULL.\n");
         return -1;
@@ -470,16 +689,58 @@ inline int network_connect(const struct addrinfo *server_address) {
     }
 }
 
-inline network_result network_send(socket_t socket, const void *data, size_t size) {
+inline int network_send(socket_t socketfd, const void *data) {
+    if (socketfd < 0) {
+        printf("Invalid socket descriptor: %d\n", socketfd);
+        return -1;
+    }
+    
+    if (data == NULL) {
+        printf("Data pointer is NULL\n");
+        return -1;
+    }
+
+    int len = strlen(data);
+    if (len == 0) {
+        printf("Attempting to send empty string\n");
+        return 0;  
+    }
+
+    int bytes_sent = send(socketfd, data, len, 0);
+    if(bytes_sent < 0) {
+        printf("send failed.\n");
+        return -1;
+    }
+    return bytes_sent;
+}
+
+inline int network_recv(socket_t socketfd, void *data, size_t buffer_size){
+    if (socketfd < 0) {
+        printf("Invalid socket descriptor: %d\n", socketfd);
+        return -1;
+    }
+    
+    if (data == NULL) {
+        printf("Buffer pointer is NULL, no place to put the data\n");
+        return -1;
+    }
+    
+    if (buffer_size == 0) {
+        printf("Buffer size is zero, no space for data insertion.\n");
+        return -1;
+    }
+    int bytes_recv = recv(socketfd, data, buffer_size, 0);
+    if(bytes_recv < 0) {
+        printf("recv failed.\n");
+        return -1;
+    }
+    return bytes_recv;
 
 }
 
+
 inline void network_close(socket_t socket) {
-#ifdef _WIN32
-    closesocket(socket);
-#else
     close(socket);
-#endif
 }
 #endif
 
