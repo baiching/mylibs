@@ -1,10 +1,5 @@
 #define NETWORK_IMPLEMENTATION
-#include "../headers/network.h"
-#include <stdio.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <errno.h>
-#include <string.h>
+#include "../network.h"
 
 int main() {
     struct sockaddr_storage client_storage;

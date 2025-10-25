@@ -70,7 +70,7 @@ void network_cleanup(void);
 /**
  * @brief Creates a TCP server socket that listens for incoming connections on the specified port.
  *
- * @param port Null-terminated string specifying the port number or service name (e.g., "8080", "http")
+ * @param port a string specifying the port number
  * @return socket_t On success: valid socket descriptor for accepting connections
  *                  On failure: -1
  *
@@ -96,40 +96,14 @@ void network_cleanup(void);
  * @see network_accept()
  * @see network_close()
  * @see BACKLOG
- *
- * @code
- * // Example: Create a server listening on port 8080
- * socket_t server_sock = network_listen("8080");
- * if (server_sock >= 0) {
- *     printf("Server listening on port 8080\n");
- *
- *     // Accept incoming connections
- *     socket_t client_sock = network_accept(server_sock, NULL);
- *     if (client_sock >= 0) {
- *         // Handle client connection
- *         network_close(client_sock);
- *     }
- *     network_close(server_sock);
- * }
- * @endcode
- *
- * @code
- * // Example: Create a server using service name
- * socket_t server_sock = network_listen("http");
- * if (server_sock >= 0) {
- *     printf("Server listening on HTTP port (80)\n");
- *     // ... use server socket
- *     network_close(server_sock);
- * }
- * @endcode
  */
 socket_t network_listen(const char *port);
 
 /**
  * @brief Creates a TCP server socket that listens for incoming connections on a specific IP address and port.
  *
- * @param ip Null-terminated string specifying the IP address to bind to (e.g., "192.168.1.100", "::1")
- * @param port Null-terminated string specifying the port number or service name (e.g., "8080", "http")
+ * @param ip a string specifying the IP address to bind (e.g., "192.168.1.100")
+ * @param port a string specifying the port number
  * @return socket_t On success: valid socket descriptor for accepting connections
  *                  On failure: -1
  *
@@ -174,25 +148,6 @@ socket_t network_listen(const char *port);
  * }
  * @endcode
  *
- * @code
- * // Example: Create an IPv6 server on localhost
- * socket_t server_sock = network_listen_on("::1", "8080");
- * if (server_sock >= 0) {
- *     printf("IPv6 server listening on [::1]:8080\n");
- *     // ... use server socket
- *     network_close(server_sock);
- * }
- * @endcode
- *
- * @code
- * // Example: Listen on all IPv4 interfaces (alternative to network_listen)
- * socket_t server_sock = network_listen_on("0.0.0.0", "8080");
- * if (server_sock >= 0) {
- *     printf("Server listening on all IPv4 interfaces port 8080\n");
- *     // ... use server socket
- *     network_close(server_sock);
- * }
- * @endcode
  */
 socket_t network_listen_on(const char *ip, const char *port); // specific interface
 
@@ -252,39 +207,14 @@ socket_t network_listen_on(const char *ip, const char *port); // specific interf
  * @endcode
  *
  * @code
- * // Example: Get client address information
- * struct sockaddr_storage client_addr;
- * socket_t client_sock = network_accept(server_sock, &client_addr);
  *
- * if (client_sock >= 0) {
- *     char client_ip[INET6_ADDRSTRLEN];
- *     if (client_addr.ss_family == AF_INET) {
- *         struct sockaddr_in *s = (struct sockaddr_in *)&client_addr;
- *         inet_ntop(AF_INET, &s->sin_addr, client_ip, sizeof(client_ip));
- *     } else {
- *         struct sockaddr_in6 *s = (struct sockaddr_in6 *)&client_addr;
- *         inet_ntop(AF_INET6, &s->sin6_addr, client_ip, sizeof(client_ip));
- *     }
- *     printf("Client connected from: %s\n", client_ip);
- * }
- * @endcode
- *
- * @code
- * // Example: Accept without storing client address (if not needed)
- * socket_t client_sock = network_accept(server_sock, NULL);
- * if (client_sock >= 0) {
- *     // Client connected, but we don't care about their address
- *     // ... handle connection
- *     network_close(client_sock);
- * }
- * @endcode
  */
 socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storage); // accept connection
 
 // client side
 
 /**
- * @brief Establishes a connection to a remote server using pre-resolved address information.
+ * @brief Establishes a connection to a remote server using pre-resolved address information from client side.
  *
  * @param server_address Pointer to addrinfo structure containing pre-resolved server address information
  * @return socket_t On success: valid socket descriptor for communicating with the server
@@ -332,44 +262,6 @@ socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storag
  * }
  * @endcode
  *
- * @code
- * // Example: Connect to specific IP and port
- * struct addrinfo hints, *res;
- * memset(&hints, 0, sizeof(hints));
- * hints.ai_family = AF_UNSPEC;
- * hints.ai_socktype = SOCK_STREAM;
- *
- * if (getaddrinfo("192.168.1.100", "8080", &hints, &res) == 0) {
- *     socket_t sock = network_connect(res);
- *     if (sock >= 0) {
- *         printf("Connected to server at 192.168.1.100:8080\n");
- *         // ... communicate with server
- *         network_close(sock);
- *     }
- *     freeaddrinfo(res);
- * }
- * @endcode
- *
- * @code
- * // Example: Try multiple addresses until one succeeds
- * struct addrinfo hints, *res, *p;
- * memset(&hints, 0, sizeof(hints));
- * hints.ai_family = AF_UNSPEC;
- * hints.ai_socktype = SOCK_STREAM;
- *
- * if (getaddrinfo("example.com", "http", &hints, &res) == 0) {
- *     for (p = res; p != NULL; p = p->ai_next) {
- *         socket_t sock = network_connect(p);
- *         if (sock >= 0) {
- *             printf("Connected using address family: %d\n", p->ai_family);
- *             // ... use the connection
- *             network_close(sock);
- *             break;
- *         }
- *     }
- *     freeaddrinfo(res);
- * }
- * @endcode
  */
 socket_t network_connect(const struct addrinfo *server_address);
 network_result network_connect_timeout(const char *ip, int port, int timeout_ms);
@@ -399,7 +291,6 @@ network_result network_connect_timeout(const char *ip, int port, int timeout_ms)
  * @note For binary data or explicit length control, consider a different API.
  * @note The return value may be less than the string length due to partial sends (normal TCP behavior).
  * @note Sending an empty string returns 0 (not an error).
- * @note The function uses blocking I/O by default (flags=0).
  *
  * @warning The socket must be in a connected state (established TCP connection).
  * @warning The data parameter must be a valid null-terminated string.
@@ -421,42 +312,6 @@ network_result network_connect_timeout(const char *ip, int port, int timeout_ms)
  * }
  * @endcode
  *
- * @code
- * // Example: Send multiple messages in a chat application
- * const char *messages[] = {"USER Alice", "JOIN #general", "MSG Hello everyone!"};
- *
- * for (int i = 0; i < 3; i++) {
- *     int bytes = network_send(sock, messages[i]);
- *     if (bytes < 0) {
- *         printf("Failed to send message: %s\n", messages[i]);
- *         break;
- *     }
- * }
- * @endcode
- *
- * @code
- * // Example: Handle partial sends (though rare in practice)
- * const char *long_message = "This is a very long message...";
- * int bytes_sent = network_send(sock, long_message);
- *
- * if (bytes_sent >= 0) {
- *     if (bytes_sent < strlen(long_message)) {
- *         printf("Partial send: %d of %zu bytes sent\n",
- *                bytes_sent, strlen(long_message));
- *         // In production, you might want to resend remaining data
- *     } else {
- *         printf("Full message sent successfully\n");
- *     }
- * }
- * @endcode
- *
- * @code
- * // Example: Send empty string (edge case)
- * int bytes = network_send(sock, "");
- * if (bytes == 0) {
- *     printf("Empty string sent (not an error)\n");
- * }
- * @endcode
  */
 socket_t network_send(socket_t socket, const void *data);
 
@@ -509,54 +364,6 @@ socket_t network_send(socket_t socket, const void *data);
  * }
  * @endcode
  *
- * @code
- * // Example: Receive loop for complete message
- * char buffer[1024];
- * int total_received = 0;
- *
- * while (total_received < sizeof(buffer) - 1) {
- *     int bytes = network_recv(sock, buffer + total_received,
- *                             sizeof(buffer) - total_received);
- *     if (bytes <= 0) break;
- *     total_received += bytes;
- *
- *     // Check if we have a complete message (example: newline terminated)
- *     if (buffer[total_received - 1] == '\n') {
- *         buffer[total_received] = '\0';
- *         printf("Complete message: %s", buffer);
- *         break;
- *     }
- * }
- * @endcode
- *
- * @code
- * // Example: Handle connection closure
- * char buffer[256];
- * while (1) {
- *     int bytes = network_recv(sock, buffer, sizeof(buffer));
- *     if (bytes > 0) {
- *         // Process received data
- *         buffer[bytes] = '\0';
- *         printf("Received: %s", buffer);
- *     } else if (bytes == 0) {
- *         printf("Server closed the connection\n");
- *         break;
- *     } else {
- *         printf("Receive error, closing connection\n");
- *         break;
- *     }
- * }
- * @endcode
- *
- * @code
- * // Example: Binary data reception
- * uint8_t binary_data[512];
- * int bytes = network_recv(sock, binary_data, sizeof(binary_data));
- * if (bytes > 0) {
- *     // Process binary data (no null terminator needed)
- *     printf("Received %d bytes of binary data\n", bytes);
- * }
- * @endcode
  */
 socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size);
 

@@ -1,5 +1,5 @@
 #define NETWORK_IMPLEMENTATION
-#include "../headers/network.h"
+#include "../network.h"
 
 int main() {
     struct addrinfo *clientdata, hint;
