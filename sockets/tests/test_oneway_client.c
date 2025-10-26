@@ -17,11 +17,13 @@ int main() {
     socket_t sockfd = socket(clientdata->ai_family, clientdata->ai_socktype, clientdata->ai_protocol);
 
     sockfd = network_connect(clientdata);
-
-    fgets(buffer, sizeof(buffer), stdin);
-    int bytes = network_send(sockfd, buffer);
-
-
+    while(1) {
+        fgets(buffer, sizeof(buffer), stdin);
+        int bytes = network_send(sockfd, buffer);
+        if (strcmp(buffer, ".exit\n") == 0) {
+            break;
+        }
+    }
     free(buffer);
     network_close(sockfd);
 }

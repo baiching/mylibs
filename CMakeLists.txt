@@ -7,4 +7,6 @@ set(CMAKE_C_STANDARD 11)
 
 add_executable(mylibs sockets/tests/test_basic_client.c
                 sockets/tests/test_basic_server.c
-                sockets/network.h)
+                sockets/network.h
+        sockets/tests/test_oneway_client.c
+        sockets/tests/test_oneway_server.c)

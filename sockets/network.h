@@ -2,7 +2,7 @@
  * @file network.h
  * @brief Minimal Linux Socket Library - Lightweight TCP networking for Linux
  * @version 1.0.0
- * 
+ *
  * Header-only socket library providing clean TCP networking APIs for Linux.
  * 
  * Available APIs:
@@ -367,10 +367,14 @@ socket_t network_send(socket_t socket, const void *data);
  */
 socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size);
 
+// Guaranteed Delivery
+socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size);
+
 // closing socket
 void network_close(socket_t socket);
 
 // Utilities
+
 int network_set_nonblocking(socket_t sock);  // TODO : later
 int network_would_block(void);               // TODO : later
 
@@ -547,9 +551,16 @@ inline socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size){
 
 }
 
+inline socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size) {
+    return 1;
+}
 
 inline void network_close(socket_t socket) {
     close(socket);
+}
+
+static inline FILE* network_load_file(const char *filename) {
+    return fopen(filename, "rb");
 }
 #endif
 
