@@ -1,7 +1,7 @@
 /**
  * @file network.h
  * @brief Minimal Linux Socket Library - Lightweight TCP networking for Linux
- * @version 1.0.0
+ * @version 0.1
  *
  * Header-only socket library providing clean TCP networking APIs for Linux.
  * 
@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <netdb.h>
+#include <stdlib.h>
 
 typedef int socket_t;
 
@@ -234,6 +235,7 @@ socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storag
  * @note On successful connection, "Socket successfully connected." is printed to stdout.
  * @note The returned socket must be closed with network_close() when no longer needed.
  *
+ * @warning It always calls freeaddrinfo() from withing to clear the getaddrinfo
  * @warning The server_address parameter must be a valid addrinfo structure from getaddrinfo().
  * @warning The server_address should contain complete and valid address information.
  * @warning The returned socket descriptor must be closed using network_close().
@@ -242,6 +244,15 @@ socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storag
  * @see network_close()
  * @see network_send()
  * @see network_recv()
+ *
+ *@code
+ * //Example to use default settings
+ *
+ * struct addrinfo *res = NULL;
+ * OR struct addrinfo *res = {0};
+ * socket_t clientfd = network_connect(res)
+ *
+ * @endcode
  *
  * @code
  * // Example: Connect to a server using getaddrinfo
@@ -258,12 +269,11 @@ socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storag
  *         // ... receive response
  *         network_close(sock);
  *     }
- *     freeaddrinfo(res);
  * }
  * @endcode
  *
  */
-socket_t network_connect(const struct addrinfo *server_address);
+socket_t network_connect(struct addrinfo *server_address);
 network_result network_connect_timeout(const char *ip, int port, int timeout_ms);
 
 // data transfer
@@ -303,11 +313,10 @@ network_result network_connect_timeout(const char *ip, int port, int timeout_ms)
  * @code
  * // Example: Send a simple message
  * socket_t sock = network_connect(server_addr);
- * if (sock >= 0) {
- *     int bytes_sent = network_send(sock, "Hello Server!");
- *     if (bytes_sent > 0) {
- *         printf("Sent %d bytes to server\n", bytes_sent);
- *     }
+ * int bytes_sent = network_send(sock, "Hello Server!");
+ * if(bytes_sent > 0) {
+ *    rintf("Sent %d bytes to server\n", bytes_sent);
+ * }
  *     network_close(sock);
  * }
  * @endcode
@@ -355,7 +364,7 @@ socket_t network_send(socket_t socket, const void *data);
  *
  * if (bytes_received > 0) {
  *     // Add null terminator for string processing
- *     buffer[bytes_received] = '\0';
+ *     memset(data, '\0', buffer_size);
  *     printf("Received %d bytes: %s\n", bytes_received, buffer);
  * } else if (bytes_received == 0) {
  *     printf("Connection closed by remote peer\n");
@@ -479,24 +488,35 @@ inline socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client
     return newfd;
 }
 
-inline socket_t network_connect(const struct addrinfo *server_address) {
-    if (server_address == NULL) {
-        printf("Address is NULL.\n");
-        return -1;
+inline socket_t network_connect(struct addrinfo *server_address) {
+    // if user sends and empty addrinfo, load the data here
+    if (server_address == NULL || server_address->ai_family == 0) {
+        struct addrinfo hint;
+        memset(&hint, 0, sizeof(hint)); // removing garbage
+        hint.ai_family = AF_UNSPEC;
+        hint.ai_socktype = SOCK_STREAM;
+        hint.ai_flags = AI_PASSIVE;
+
+        getaddrinfo(NULL, "8080", &hint, &server_address);
     }
 
-    const socket_t client_socket = socket(server_address->ai_family, server_address->ai_socktype, server_address->ai_protocol);
+    socket_t client_socket = socket(server_address->ai_family,
+        server_address->ai_socktype,
+        server_address->ai_protocol);
+
     if (client_socket < 0) {
-        printf("Socket creation failed.\n");
+        printf("Socket creation failed. %s\n", strerror(errno));
         return -1;
     }
 
     if (connect(client_socket, server_address->ai_addr, server_address->ai_addrlen) == 0) {
         printf("Socket successfully connected.\n");
+        freeaddrinfo(server_address);
         return client_socket;
     }
     else {
         printf("Connection failed. %s\n", strerror(errno));
+        freeaddrinfo(server_address);
         network_close(client_socket);
         return -1;
     }
@@ -505,7 +525,8 @@ inline socket_t network_connect(const struct addrinfo *server_address) {
 inline socket_t network_send(socket_t socketfd, const void *data) {
     if (socketfd < 0) {
         printf("Invalid socket descriptor: %d\n", socketfd);
-        return -1;
+        exit(EXIT_FAILURE);
+        //return -1;
     }
 
     if (data == NULL) {
@@ -530,7 +551,8 @@ inline socket_t network_send(socket_t socketfd, const void *data) {
 inline socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size){
     if (socketfd < 0) {
         printf("Invalid socket descriptor: %d\n", socketfd);
-        return -1;
+        //return -1;
+        exit(EXIT_FAILURE);
     }
 
     if (data == NULL) {

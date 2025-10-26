@@ -9,12 +9,19 @@ int main() {
     socket_t socket = network_listen("8080");
     socket_t newsocket =  network_accept(socket, &client_storage);
     while(1) {
+
         int bytes_recv = network_recv(newsocket, data, buffer_size);
-        printf(data);
         if (strcmp(data, ".exit\n") == 0) {
             break;
         }
-        printf("\n");
+        if(bytes_recv > 0) {
+            printf("%s\n", data);
+        }
+        else if(bytes_recv == 0) {
+            printf("Connection closed\n");
+            break;
+        }
+        memset(data, '\0', buffer_size);
     }
 
     network_close(newsocket);
