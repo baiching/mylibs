@@ -30,7 +30,6 @@ int main(){
     {
         free(arrPtr[i]);
     }
-
     return 0;
 
 

@@ -16,6 +16,7 @@ struct memoryblk
     int padding[3]; // Make it an even 16 byte length (total size=32 bytes in 32-bit mode).
 };
 
+// tracking the original list
 struct memoryblk **memblkList = NULL;
 
 static void f_trackMemBlkDetails(struct memoryblk *mb){
@@ -76,8 +77,4 @@ void f_trackListAllocations(){
         }
     }
     printf("Allocation List End Here.\n");
-}
-
-void f_test_print(void) {
-    printf("It works\n");
 }
