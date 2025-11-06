@@ -44,7 +44,7 @@ void *f_malloc_tracker(size_t size, const char *expr, const char *file, int line
     return (void *)&memblk[1];
 }
 
-void f_tracK_free(void *ptr, const char *expr, const char *file, int line){
+void f_track_free(void *ptr, const char *expr, const char *file, int line){
     if (!ptr)
     {
         printf("Nothing to Free!\n");
