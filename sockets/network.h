@@ -33,6 +33,7 @@
 #include <string.h>
 #include <netdb.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 typedef int socket_t;
 
@@ -384,8 +385,8 @@ void network_close(socket_t socket);
 
 // Utilities
 
-int network_set_nonblocking(socket_t sock);  // TODO : later
-int network_would_block(void);               // TODO : later
+void network_set_nonblocking(socket_t sock);
+void network_would_block(socket_t sock);               // TODO : later
 
 
 #ifdef NETWORK_IMPLEMENTATION
@@ -575,6 +576,23 @@ inline socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size){
 
 inline socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size) {
     return 1;
+}
+
+inline void network_set_nonblocking(socket_t sock) {
+    int originslflags = fcntl(sock, F_GETFL, 0);
+    if (fcntl(sock, F_SETFL, originslflags | O_NONBLOCK) < 0) {
+        printf("fcntl F_SETFL O_NONBLOCK failed.\n");
+        exit(EXIT_FAILURE);
+    }
+
+}
+
+inline void network_would_block(socket_t sock) {
+    int originslflags = fcntl(sock, F_GETFL, 0);
+    if (fcntl(sock, F_SETFL, originslflags & O_NONBLOCK) < 0) {
+        printf("fcntl F_SETFL O_NONBLOCK failed.\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 inline void network_close(socket_t socket) {
