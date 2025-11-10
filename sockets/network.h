@@ -34,6 +34,7 @@
 #include <netdb.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <sys/epoll.h>
 
 typedef int socket_t;
 
@@ -49,6 +50,16 @@ typedef struct {
     char *buffer;
     size_t size;
 } data;
+
+// it'll be used for epoll event to store users data and also help it to act as a lookup table
+struct client_event_data {
+    uint32_t event;
+    socket_t clientfd;
+    char *client_id;
+
+    socket_t target;
+    char *targetid;
+};
 
 // return codes
 typedef enum {
@@ -384,10 +395,14 @@ socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size);
 void network_close(socket_t socket);
 
 // Utilities
+void network_set_nonblocking(socket_t sock); // sets the file descriptor of the socket as non-blocking, returns nothing
+void network_would_block(socket_t sock); // sets the file descriptor of the socket as blocking, returns nothing
 
-void network_set_nonblocking(socket_t sock);
-void network_would_block(socket_t sock);               // TODO : later
-
+// EPOLL events
+socket_t network_epoll_create(void); // JUST A DRAFT
+void network_epoll_ctl(socket_t epollfd, int operation, socket_t sockfd, struct client_event_data); // JUST A DRAFT
+void network_epoll_wait(socket_t epollfd, int epoll_events, socket_t sockfd); // JUST A DRAFT
+void network_epoll_close(socket_t epollfd); // Should close the event gracefully, after closing all the sockets it's managing
 
 #ifdef NETWORK_IMPLEMENTATION
 
@@ -575,9 +590,11 @@ inline socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size){
 }
 
 inline socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size) {
+    printf("don't use it, it's haven't been implemented yet!\n");
+    exit(EXIT_FAILURE);
     return 1;
 }
-
+// Concurrency
 inline void network_set_nonblocking(socket_t sock) {
     int originslflags = fcntl(sock, F_GETFL, 0);
     if (fcntl(sock, F_SETFL, originslflags | O_NONBLOCK) < 0) {
@@ -593,6 +610,16 @@ inline void network_would_block(socket_t sock) {
         printf("fcntl F_SETFL O_NONBLOCK failed.\n");
         exit(EXIT_FAILURE);
     }
+}
+
+/* Epoll events */
+inline socket_t network_epoll_create(void) {
+    int epollfd = epoll_create(1);
+    if (epollfd < 0) {
+        printf("epoll_create failed.\n");
+        exit(EXIT_FAILURE);
+    }
+    return epollfd;
 }
 
 inline void network_close(socket_t socket) {
