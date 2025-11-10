@@ -51,14 +51,12 @@ typedef struct {
     size_t size;
 } data;
 
-// it'll be used for epoll event to store users data and also help it to act as a lookup table
+// it'll be used for epoll event to store users data
 struct client_event_data {
-    uint32_t event;
-    socket_t clientfd;
-    char *client_id;
-
-    socket_t target;
-    char *targetid;
+    int efd; // epoll_fd: fd of the current epoll
+    int op; // type of operation needed to perform: EPOLL_CTL_ADD, EPOLL_CTL_MOD, EPOLL_CTL_DEL
+    int clientfd; // the socket this event will be monitoring
+    uint32_t event; // the type of event that should be looked out for
 };
 
 // return codes
@@ -399,8 +397,8 @@ void network_set_nonblocking(socket_t sock); // sets the file descriptor of the 
 void network_would_block(socket_t sock); // sets the file descriptor of the socket as blocking, returns nothing
 
 // EPOLL events
-socket_t network_epoll_create(void); // JUST A DRAFT
-void network_epoll_ctl(socket_t epollfd, int operation, socket_t sockfd, struct client_event_data); // JUST A DRAFT
+socket_t network_epoll_create(void); // creates a new epoll and returns epoll_fd which is an integer
+void network_epoll_ctl(struct client_event_data *cdata);
 void network_epoll_wait(socket_t epollfd, int epoll_events, socket_t sockfd); // JUST A DRAFT
 void network_epoll_close(socket_t epollfd); // Should close the event gracefully, after closing all the sockets it's managing
 
@@ -620,6 +618,30 @@ inline socket_t network_epoll_create(void) {
         exit(EXIT_FAILURE);
     }
     return epollfd;
+}
+
+inline void network_epoll_ctl(struct client_event_data *cdata) {
+    struct epoll_event ev;
+
+    int epollfd = cdata->efd;
+    int op = cdata->op;
+    int fd = cdata->clientfd;
+
+    ev.events = cdata->event;
+    ev.data.fd = cdata->clientfd;
+
+    if (cdata->op == EPOLL_CTL_DEL) {
+        epoll_ctl(epollfd, op, fd, NULL);
+        printf("DELETED EVENT\n");
+        return;
+    }
+
+    if (epoll_ctl(epollfd, op, fd, &ev) < 0) {
+        printf("epoll_ctl failed.\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("ADDED EVENT\n");
+    return;
 }
 
 inline void network_close(socket_t socket) {

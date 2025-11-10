@@ -13,7 +13,8 @@ add_executable(mylibs sockets/tests/test_basic_client.c
         sockets/tests/test_oneway_client.c
         sockets/tests/test_oneway_server.c
         memory/memorytracker.c
-        memory/examples/example1.c)
+        memory/examples/example1.c
+)
 
 
 # Linking libraries
