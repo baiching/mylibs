@@ -7,7 +7,7 @@
  * 
  * Available APIs:
  * Server:
- *   • network_listen()       - Listen on port (all interfaces)
+ *   • network_listen(const char *port) - Listen on port (all interfaces). the value of parameter port is a string
  *   • network_listen_on()    - Listen on specific IP and port  
  *   • network_accept()       - Accept incoming connections
  * 
@@ -18,7 +18,9 @@
  *   • network_send()         - Send null-terminated string
  *   • network_recv()         - Receive data into buffer
  *   • network_close()        - Close socket connection
- * 
+ *
+ * Concurrency:
+ *
  * 
  */
 
@@ -78,316 +80,20 @@ int network_init(void);
 void network_cleanup(void);
 
 // server side
-/**
- * @brief Creates a TCP server socket that listens for incoming connections on the specified port.
- *
- * @param port a string specifying the port number
- * @return socket_t On success: valid socket descriptor for accepting connections
- *                  On failure: -1
- *
- * @details This function creates a TCP server socket bound to all available network interfaces
- * (both IPv4 and IPv6 if supported) and starts listening for incoming connections.
- *
- * The function performs the following operations:
- * - Initializes address hints for passive TCP socket
- * - Resolves local addresses using getaddrinfo() with AI_PASSIVE flag
- * - Creates a socket with the appropriate address family (IPv4/IPv6)
- * - Binds the socket to the specified port on all interfaces
- * - Starts listening for incoming connections with a backlog of 10
- * - Cleans up allocated resources before returning
- *
- * @note The server listens on all available network interfaces (0.0.0.0 for IPv4, :: for IPv6).
- * @note The backlog queue size is set to 10 pending connections (see BACKLOG macro).
- * @note Memory allocated by getaddrinfo() is properly freed before return.
- * @note On failure, appropriate error messages are printed to stdout.
- *
- * @warning The returned socket must be closed using network_close() when no longer needed.
- * @warning The port parameter must be a valid null-terminated string.
- *
- * @see network_accept()
- * @see network_close()
- * @see BACKLOG
- */
 socket_t network_listen(const char *port);
-
-/**
- * @brief Creates a TCP server socket that listens for incoming connections on a specific IP address and port.
- *
- * @param ip a string specifying the IP address to bind (e.g., "192.168.1.100")
- * @param port a string specifying the port number
- * @return socket_t On success: valid socket descriptor for accepting connections
- *                  On failure: -1
- *
- * @details This function creates a TCP server socket bound to a specific network interface
- * and starts listening for incoming connections. Unlike network_listen(), this function
- * allows binding to a specific IP address rather than all available interfaces.
- *
- * The function performs the following operations:
- * - Initializes address hints for passive TCP socket
- * - Resolves specific address using getaddrinfo() with AI_PASSIVE flag
- * - Creates a socket with the appropriate address family (IPv4/IPv6)
- * - Binds the socket to the specified IP address and port
- * - Starts listening for incoming connections with a backlog of 10
- * - Cleans up allocated resources before returning
- *
- * @note Use this function when you need to listen on a specific network interface.
- * @note The backlog queue size is set to 10 pending connections (see BACKLOG macro).
- * @note Memory allocated by getaddrinfo() is properly freed before return.
- * @note On failure, appropriate error messages are printed to stdout.
- *
- * @warning The returned socket must be closed using network_close() when no longer needed.
- * @warning Both ip and port parameters must be valid null-terminated strings.
- *
- * @see network_listen()
- * @see network_accept()
- * @see network_close()
- * @see BACKLOG
- *
- * @code
- * // Example: Create a server listening on specific IP and port
- * socket_t server_sock = network_listen_on("192.168.1.100", "8080");
- * if (server_sock >= 0) {
- *     printf("Server listening on 192.168.1.100:8080\n");
- *
- *     // Accept incoming connections
- *     socket_t client_sock = network_accept(server_sock, NULL);
- *     if (client_sock >= 0) {
- *         // Handle client connection
- *         network_close(client_sock);
- *     }
- *     network_close(server_sock);
- * }
- * @endcode
- *
- */
 socket_t network_listen_on(const char *ip, const char *port); // specific interface
-
-/**
- * @brief Accepts an incoming connection on a listening server socket.
- *
- * @param sockfd Listening socket descriptor returned by network_listen() or network_listen_on()
- * @param client_storage Pointer to sockaddr_storage structure to receive client address information
- * @return socket_t On success: new socket descriptor for communicating with the client
- *                  On failure: -1
- *
- * @details This function extracts the first connection request from the queue of pending connections
- * for the listening socket, creates a new connected socket, and returns a file descriptor for
- * that socket. The new socket is used for communication with the client, while the original
- * listening socket remains open to accept additional connections.
- *
- * The client's address information (IP address and port) is stored in the provided
- * sockaddr_storage structure, which can be used to identify the connecting client.
- *
- * @note This function blocks until a connection is available, unless the socket is set to non-blocking mode.
- * @note The original listening socket (sockfd) remains open and should continue to be used for accepting new connections.
- * @note The new socket (return value) is dedicated to the specific client and should be closed when the connection ends.
- * @note On successful connection, "Client connected." is printed to stdout.
- *
- * @warning The sockfd parameter must be a valid socket descriptor from network_listen() or network_listen_on().
- * @warning The client_storage parameter must point to a valid sockaddr_storage structure.
- * @warning The returned client socket must be closed using network_close() when the connection ends.
- *
- * @see network_listen()
- * @see network_listen_on()
- * @see network_close()
- * @see network_send()
- * @see network_recv()
- *
- * @code
- * // Example: Accept connections in a server loop
- * socket_t server_sock = network_listen("8080");
- * if (server_sock >= 0) {
- *     printf("Server listening on port 8080\n");
- *
- *     while (1) {
- *         struct sockaddr_storage client_addr;
- *         socket_t client_sock = network_accept(server_sock, &client_addr);
- *
- *         if (client_sock >= 0) {
- *             // Handle client connection in new thread or process
- *             char buffer[1024];
- *             int bytes = network_recv(client_sock, buffer, sizeof(buffer));
- *             if (bytes > 0) {
- *                 network_send(client_sock, "Message received");
- *             }
- *             network_close(client_sock);
- *         }
- *     }
- *     network_close(server_sock);
- * }
- * @endcode
- *
- * @code
- *
- */
 socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storage); // accept connection
 
 // client side
-
-/**
- * @brief Establishes a connection to a remote server using pre-resolved address information from client side.
- *
- * @param server_address Pointer to addrinfo structure containing pre-resolved server address information
- * @return socket_t On success: valid socket descriptor for communicating with the server
- *                  On failure: -1
- *
- * @details This function creates a client socket and establishes a TCP connection to a remote server
- * using pre-resolved address information from getaddrinfo(). The server_address parameter should
- * contain the complete address information including family, socket type, protocol and address data.
- *
- * The function performs the following operations:
- * - Creates a socket matching the server address family and type
- * - Attempts to connect to the remote server using the provided address information
- * - Returns the connected socket on success, or cleans up and returns -1 on failure
- *
- * @note This function is typically used with address information obtained from getaddrinfo().
- * @note The function blocks until the connection is established or fails.
- * @note On successful connection, "Socket successfully connected." is printed to stdout.
- * @note The returned socket must be closed with network_close() when no longer needed.
- *
- * @warning It always calls freeaddrinfo() from withing to clear the getaddrinfo
- * @warning The server_address parameter must be a valid addrinfo structure from getaddrinfo().
- * @warning The server_address should contain complete and valid address information.
- * @warning The returned socket descriptor must be closed using network_close().
- *
- * @see getaddrinfo()
- * @see network_close()
- * @see network_send()
- * @see network_recv()
- *
- *@code
- * //Example to use default settings
- *
- * struct addrinfo *res = NULL;
- * OR struct addrinfo *res = {0};
- * socket_t clientfd = network_connect(res)
- *
- * @endcode
- *
- * @code
- * // Example: Connect to a server using getaddrinfo
- * struct addrinfo hints, *res;
- * memset(&hints, 0, sizeof(hints));
- * hints.ai_family = AF_UNSPEC;
- * hints.ai_socktype = SOCK_STREAM;
- *
- * if (getaddrinfo("example.com", "http", &hints, &res) == 0) {
- *     socket_t sock = network_connect(res);
- *     if (sock >= 0) {
- *         // Successfully connected to example.com:80
- *         network_send(sock, "GET / HTTP/1.0\r\n\r\n");
- *         // ... receive response
- *         network_close(sock);
- *     }
- * }
- * @endcode
- *
- */
 socket_t network_connect(struct addrinfo *server_address);
 network_result network_connect_timeout(const char *ip, int port, int timeout_ms);
 
 // data transfer
-
-/**
- * @brief Sends a null-terminated string over a connected socket.
- *
- * @param socketfd Connected socket descriptor for sending data
- * @param data Null-terminated string to send over the socket
- * @return int On success: number of bytes actually sent
- *             On failure: -1\n
- *             On empty string: 0 (not an error)
- *
- * @details This function sends a null-terminated string over an established socket connection.
- * The function automatically calculates the string length using strlen() and sends the entire
- * content (excluding the null terminator) to the remote endpoint.
- *
- * The function performs the following operations:
- * - Validates the socket descriptor and data pointer
- * - Calculates the string length using strlen()
- * - Sends the data using the send() system call with flags=0
- * - Returns the actual number of bytes sent
- *
- * @note This function is designed for sending null-terminated strings only.
- * @note For binary data or explicit length control, consider a different API.
- * @note The return value may be less than the string length due to partial sends (normal TCP behavior).
- * @note Sending an empty string returns 0 (not an error).
- *
- * @warning The socket must be in a connected state (established TCP connection).
- * @warning The data parameter must be a valid null-terminated string.
- * @warning Partial sends are normal TCP behavior and not treated as errors.
- *
- * @see network_recv()
- * @see network_connect()
- * @see network_accept()
- *
- * @code
- * // Example: Send a simple message
- * socket_t sock = network_connect(server_addr);
- * int bytes_sent = network_send(sock, "Hello Server!");
- * if(bytes_sent > 0) {
- *    rintf("Sent %d bytes to server\n", bytes_sent);
- * }
- *     network_close(sock);
- * }
- * @endcode
- *
- */
 socket_t network_send(socket_t socket, const void *data);
-
-/**
- * @brief Receives data from a connected socket into a provided buffer.
- *
- * @param socketfd Connected socket descriptor for receiving data
- * @param data Pointer to buffer where received data will be stored
- * @param buffer_size Maximum number of bytes that can be stored in the buffer
- * @return int On success: number of bytes actually received (0 indicates connection closed)
- *             On failure: -1
- *
- * @details This function receives data from an established socket connection and stores it
- * in the provided buffer. The function will receive up to buffer_size bytes, but may return
- * fewer bytes if less data is currently available.
- *
- * The function performs the following operations:
- * - Validates the socket descriptor, buffer pointer, and buffer size
- * - Receives available data using the recv() system call with flags=0
- * - Returns the actual number of bytes received
- *
- * @note The received data is stored as raw bytes - no null terminator is added automatically.
- * @note A return value of 0 indicates the connection has been closed gracefully by the remote peer.
- * @note The return value may be less than buffer_size due to partial receives (normal TCP behavior).
- * @note The function uses blocking I/O by default (will wait until data is available or connection closes).
- * @note For string data, the caller must add a null terminator if needed.
- *
- * @warning The socket must be in a connected state (established TCP connection).
- * @warning The data buffer must be writable and large enough to hold received data.
- * @warning The received data is not null-terminated - caller must handle this if working with strings.
- * @warning Partial receives are normal TCP behavior and not treated as errors.
- *
- * @see network_send()
- * @see network_connect()
- * @see network_accept()
- *
- * @code
- * // Example: Receive data into a buffer
- * char buffer[1024];
- * int bytes_received = network_recv(sock, buffer, sizeof(buffer));
- *
- * if (bytes_received > 0) {
- *     // Add null terminator for string processing
- *     memset(data, '\0', buffer_size);
- *     printf("Received %d bytes: %s\n", bytes_received, buffer);
- * } else if (bytes_received == 0) {
- *     printf("Connection closed by remote peer\n");
- * } else {
- *     printf("Receive error\n");
- * }
- * @endcode
- *
- */
 socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size);
 
 // Guaranteed Delivery
-socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size);
+socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size); // TODO
 
 // closing socket
 void network_close(socket_t socket);
@@ -398,8 +104,24 @@ void network_would_block(socket_t sock); // sets the file descriptor of the sock
 
 // EPOLL events
 socket_t network_epoll_create(void); // creates a new epoll and returns epoll_fd which is an integer
-void network_epoll_ctl(struct client_event_data *cdata);
-void network_epoll_wait(socket_t epollfd, int epoll_events, socket_t sockfd); // JUST A DRAFT
+void network_epoll_ctl(struct client_event_data *cdata); // adds the clients fd in the event to monitor
+/**
+ *
+ * @param epollfd : The efd of the current event
+ * @param events : Example below on how to allocate data for stack or heap
+ * @param maxevents : Maximum number of events return, must be greater than zero
+ * @param timeout: The wait will block for specific timeout. Specifies the number of milliseconds.
+ * @warning Specifying a timeout of -1 causes epoll_wait() to block indefinitely
+ * @return Number of fd's that are ready for I/O operations
+ *
+ * @example
+ * // For stack
+ * struct epoll_event events[maxevents];
+ *
+ * // for heap
+ * struct epoll_event *events = malloc(maxevents * sizeof(struct epoll_event));
+ */
+int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxevents, int timeout); // returns the number of fd's are ready for I/O operations
 void network_epoll_close(socket_t epollfd); // Should close the event gracefully, after closing all the sockets it's managing
 
 #ifdef NETWORK_IMPLEMENTATION
@@ -642,6 +364,15 @@ inline void network_epoll_ctl(struct client_event_data *cdata) {
     }
     printf("ADDED EVENT\n");
     return;
+}
+
+inline int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxevents, int timeout) {
+    int nfds = epoll_wait(epollfd, events, maxevents, timeout);
+    if (nfds < 0) {
+        printf("epoll_wait failed.%s\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    return nfds;
 }
 
 inline void network_close(socket_t socket) {
