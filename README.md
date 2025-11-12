@@ -1,4 +1,4 @@
-# mylibs: A Collection of Header-Only C/C++ Libraries
+# mylibs: A Collection of C/C++ Libraries and tools
 A set of lightweight, reusable libraries designed to simplify common tasks and enhance code modularity.
 
 # Libraries Included
