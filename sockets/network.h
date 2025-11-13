@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #if defined(_WIN32) || defined(__MINGW32__)
 #define WINSOCK_IMPL
@@ -62,8 +63,6 @@ typedef SOCKET socket_t;
 typedef int socket_t;
 #endif
 
-
-
 #define BACKLOG 10 //only accepts upto 10 connections
 
 // To store buffer better, this way makes the buffer more flexible
@@ -94,8 +93,12 @@ typedef enum {
     SOCKET_UNKNOWN_ERROR,
 } network_result;
 
-// core cycle
+// windows only cycle
 int network_init(void);
+
+/**
+ * This functioin will remove all the sockets
+ */
 void network_cleanup(void);
 
 // server side
@@ -144,6 +147,30 @@ int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxeven
 void network_epoll_close(socket_t epollfd); // Should close the event gracefully, after closing all the sockets it's managing
 
 #ifdef NETWORK_IMPLEMENTATION
+
+inline int network_init(void) {
+#ifdef WINSOCK_IMPL
+    WORD wVersionRequested;
+    WSADATA wsaData;
+    int err;
+
+    /* Use the MAKEWORD(lowbyte, highbyte) macro declared in Windef.h */
+    wVersionRequested = MAKEWORD(2, 2);
+    err = WSAStartup(wVersionRequested, &wsaData);
+
+    if (err != 0 ) {
+        printf("WSAStartup failed with error: %d\n", err);
+        return 1;
+    }
+#elif LINUX_SOCKETS_IMPL
+    printf("This function is for Windows only, it's not needed in linux.\n");
+#endif
+
+
+    return 0;
+}
+
+
 
 inline socket_t network_listen(const char *port) {
     struct addrinfo hints, *res;
