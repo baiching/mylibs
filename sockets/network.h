@@ -371,33 +371,55 @@ inline socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size
 }
 // Concurrency
 inline void network_set_nonblocking(socket_t sock) {
+#ifdef WINSOCK_IMPL
+    printf("Windows doesn't support epoll unfortunately!.\n");
+    return;
+#elif LINUX_IMPL
     int originslflags = fcntl(sock, F_GETFL, 0);
     if (fcntl(sock, F_SETFL, originslflags | O_NONBLOCK) < 0) {
         printf("fcntl F_SETFL O_NONBLOCK failed.\n");
         exit(EXIT_FAILURE);
     }
+#endif
+
 
 }
 
 inline void network_would_block(socket_t sock) {
+#ifdef WINSOCK_IMPL
+    printf("Windows doesn't support epoll unfortunately!.\n");
+    return;
+#elif LINUX_IMPL
     int originslflags = fcntl(sock, F_GETFL, 0);
     if (fcntl(sock, F_SETFL, originslflags & O_NONBLOCK) < 0) {
         printf("fcntl F_SETFL O_NONBLOCK failed.\n");
         exit(EXIT_FAILURE);
     }
+#endif
+
 }
 
 /* Epoll events */
 inline socket_t network_epoll_create(void) {
+#ifdef WINSOCK_IMPL
+    printf("Windows doesn't support epoll unfortunately!.\n");
+    return -1;
+#elif LINUX_IMPL
     int epollfd = epoll_create(1);
     if (epollfd < 0) {
         printf("epoll_create failed.\n");
         exit(EXIT_FAILURE);
     }
     return epollfd;
+#endif
+
 }
 
 inline void network_epoll_ctl(struct client_event_data *cdata) {
+#ifdef WINSOCK_IMPL
+    printf("Windows doesn't support epoll unfortunately!.\n");
+    return;
+#elif LINUX_IMPL
     struct epoll_event ev;
 
     int epollfd = cdata->efd;
@@ -419,6 +441,7 @@ inline void network_epoll_ctl(struct client_event_data *cdata) {
     }
     printf("ADDED EVENT\n");
     return;
+#endif
 }
 
 inline int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxevents, int timeout) {
