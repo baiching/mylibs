@@ -170,7 +170,16 @@ inline int network_init(void) {
     return 0;
 }
 
+inline void network_cleanup(void) {
+#ifdef WINSOCK_IMPL
+    if (WSACleanup() != 0) {
+        printf("WSACleanup failed with error: %d\n", WSAGetLastError());
+    }
+#elif LINUX_SOCKETS_IMPL
+    printf("Please use network_close(socket_fd), this function is windows only.\n");
+#endif
 
+}
 
 inline socket_t network_listen(const char *port) {
     struct addrinfo hints, *res;
