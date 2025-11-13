@@ -422,20 +422,34 @@ inline void network_epoll_ctl(struct client_event_data *cdata) {
 }
 
 inline int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxevents, int timeout) {
+
+#ifdef WINSOCK_IMPL
+    printf("Windows doesn't support epoll unfortunately!.\n");
+    return -1;
+#elif LINUX_IMPL
     int nfds = epoll_wait(epollfd, events, maxevents, timeout);
     if (nfds < 0) {
         printf("epoll_wait failed.%s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
     return nfds;
+#endif
 }
 
 void network_epoll_close(socket_t epollfd) {
-    close(epollfd);
+#ifdef WINSOCK_IMPL
+    closesocket(socket);
+#elif LINUX_IMPL
+    close(socket);
+#endif
 }
 
 inline void network_close(socket_t socket) {
+#ifdef WINSOCK_IMPL
+    closesocket(socket);
+#elif LINUX_IMPL
     close(socket);
+#endif
 }
 
 static inline FILE* network_load_file(const char *filename) {
