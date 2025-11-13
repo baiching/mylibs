@@ -28,21 +28,40 @@
 #define NETWORK_H
 
 #include <stdio.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <errno.h>
-#include <unistd.h>
-#include <string.h>
-#include <netdb.h>
 #include <stdlib.h>
-#include <fcntl.h>
-#include <sys/epoll.h>
+#include <string.h>
 
-typedef int socket_t;
+#if defined(_WIN32) || defined(__MINGW32__)
+#define WINSOCK_IMPL
+#elif defined(__linux__)
+#define LINUX_SOCKETS_IMPL
+#elif defined(__APPLE__)
+#error "macOS is not supported yet."
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#ifdef WINSOCK_IMPL
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mswsock.h>
+
+typedef SOCKET socket_t;
+#elif defined(LINUX_SOCKETS_IMPL)
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <errno.h>
+#include <unistd.h>
+#include <netdb.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
+
+typedef int socket_t;
+#endif
+
 
 
 #define BACKLOG 10 //only accepts upto 10 connections
@@ -373,6 +392,10 @@ inline int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int 
         exit(EXIT_FAILURE);
     }
     return nfds;
+}
+
+void network_epoll_close(socket_t epollfd) {
+    close(epollfd);
 }
 
 inline void network_close(socket_t socket) {
