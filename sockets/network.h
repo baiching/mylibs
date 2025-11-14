@@ -121,6 +121,9 @@ socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size); // T
 void network_close(socket_t socket);
 
 // Utilities
+#ifdef WINSOCK_IMPL
+static void network_win_errmsg(DWORD errcode);
+#endif
 void network_set_nonblocking(socket_t sock); // sets the file descriptor of the socket as non-blocking, returns nothing
 void network_would_block(socket_t sock); // sets the file descriptor of the socket as blocking, returns nothing
 
@@ -147,6 +150,31 @@ int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxeven
 void network_epoll_close(socket_t epollfd); // Should close the event gracefully, after closing all the sockets it's managing
 
 #ifdef NETWORK_IMPLEMENTATION
+
+static void network_win_errmsg(DWORD errcode) {
+#ifdef WINSOCK_IMPL
+    // Buffer to store the error message
+    LPWSTR errormsg = NULL;
+
+    FormatMessage(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER |
+            FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL,
+            errcode,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (LPWSTR)&errormsg,
+            0,
+            NULL
+        );
+
+    wprintf(L"%lu: %s\n", errcode, errormsg);
+    if (errormsg) LocalFree(errormsg);
+#else
+    printf("It's a windows only function.\n");
+#endif
+
+}
 
 inline int network_init(void) {
 #ifdef WINSOCK_IMPL
@@ -175,6 +203,7 @@ inline void network_cleanup(void) {
     if (WSACleanup() != 0) {
         printf("WSACleanup failed with error: %d\n", WSAGetLastError());
     }
+    printf("cleanup successful!\n");
 #elif LINUX_SOCKETS_IMPL
     printf("Please use network_close(socket_fd), this function is windows only.\n");
 #endif
@@ -187,7 +216,7 @@ inline socket_t network_listen(const char *port) {
 
     // clearnig the memory to load by getaddrinfo
     memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC; // ipv4 or ipv6
+    hints.ai_family = AF_INET; // ipv4
     hints.ai_socktype = SOCK_STREAM; // Since TCP, we'll be using streaming to transfer the data
     hints.ai_flags = AI_PASSIVE; // fill up any available ip
 
@@ -224,9 +253,9 @@ inline socket_t network_listen_on(const char *ip, const char *port) {
     struct addrinfo hints, *res;
     socket_t sockfd;
 
-    // clearnig the memory to load by getaddrinfo
+    // clearing the memory to load by getaddrinfo
     memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC; // ipv4 or ipv6
+    hints.ai_family = AF_INET; // ipv4
     hints.ai_socktype = SOCK_STREAM; // Since TCP, we'll be using streaming to transfer the data
     hints.ai_flags = AI_PASSIVE; // fill up any available ip
 
@@ -306,7 +335,13 @@ inline socket_t network_connect(struct addrinfo *server_address) {
         return client_socket;
     }
     else {
+#ifdef WINSOCK_IMPL
+        network_win_errmsg(GetLastError()); // prints the exact error
+
+#elif LINUX_IMPL
         printf("Connection failed. %s\n", strerror(errno));
+#endif
+
         freeaddrinfo(server_address);
         network_close(client_socket);
         return -1;
@@ -357,7 +392,12 @@ inline socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size){
     }
     int bytes_recv = recv(socketfd, data, buffer_size, 0);
     if(bytes_recv < 0) {
-        printf("recv failed. %s\n", strerror(errno));
+#ifdef WINSOCK_IMPL
+        network_win_errmsg(GetLastError()); // prints the exact error
+
+#elif LINUX_IMPL
+        printf("Connection failed. %s\n", strerror(errno));
+#endif
         return -1;
     }
     return bytes_recv;
