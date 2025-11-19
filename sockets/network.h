@@ -32,26 +32,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#if defined(_WIN32) || defined(__MINGW32__)
-#define WINSOCK_IMPL
-#elif defined(__linux__)
-#define LINUX_SOCKETS_IMPL
-#elif defined(__APPLE__)
-#error "macOS is not supported yet."
-#endif
-
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#ifdef WINSOCK_IMPL
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <mswsock.h>
 
-typedef SOCKET socket_t;
-#elif defined(LINUX_SOCKETS_IMPL)
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
@@ -61,7 +47,6 @@ typedef SOCKET socket_t;
 #include <sys/epoll.h>
 
 typedef int socket_t;
-#endif
 
 #define BACKLOG 10 //only accepts upto 10 connections
 
@@ -93,14 +78,6 @@ typedef enum {
     SOCKET_UNKNOWN_ERROR,
 } network_result;
 
-// windows only cycle
-int network_init(void);
-
-/**
- * This functioin will remove all the sockets
- */
-void network_cleanup(void);
-
 // server side
 socket_t network_listen(const char *port);
 socket_t network_listen_on(const char *ip, const char *port); // specific interface
@@ -120,10 +97,7 @@ socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size); // T
 // closing socket
 void network_close(socket_t socket);
 
-// Utilities
-#ifdef WINSOCK_IMPL
-static void network_win_errmsg(DWORD errcode);
-#endif
+// Concurrency
 void network_set_nonblocking(socket_t sock); // sets the file descriptor of the socket as non-blocking, returns nothing
 void network_would_block(socket_t sock); // sets the file descriptor of the socket as blocking, returns nothing
 
@@ -150,65 +124,6 @@ int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxeven
 void network_epoll_close(socket_t epollfd); // Should close the event gracefully, after closing all the sockets it's managing
 
 #ifdef NETWORK_IMPLEMENTATION
-
-static void network_win_errmsg(DWORD errcode) {
-#ifdef WINSOCK_IMPL
-    // Buffer to store the error message
-    LPWSTR errormsg = NULL;
-
-    FormatMessage(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER |
-            FORMAT_MESSAGE_FROM_SYSTEM |
-            FORMAT_MESSAGE_IGNORE_INSERTS,
-            NULL,
-            errcode,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-            (LPWSTR)&errormsg,
-            0,
-            NULL
-        );
-
-    wprintf(L"%lu: %s\n", errcode, errormsg);
-    if (errormsg) LocalFree(errormsg);
-#else
-    printf("It's a windows only function.\n");
-#endif
-
-}
-
-inline int network_init(void) {
-#ifdef WINSOCK_IMPL
-    WORD wVersionRequested;
-    WSADATA wsaData;
-    int err;
-
-    /* Use the MAKEWORD(lowbyte, highbyte) macro declared in Windef.h */
-    wVersionRequested = MAKEWORD(2, 2);
-    err = WSAStartup(wVersionRequested, &wsaData);
-
-    if (err != 0 ) {
-        printf("WSAStartup failed with error: %d\n", err);
-        return 1;
-    }
-#elif LINUX_SOCKETS_IMPL
-    printf("This function is for Windows only, it's not needed in linux.\n");
-#endif
-
-
-    return 0;
-}
-
-inline void network_cleanup(void) {
-#ifdef WINSOCK_IMPL
-    if (WSACleanup() != 0) {
-        printf("WSACleanup failed with error: %d\n", WSAGetLastError());
-    }
-    printf("cleanup successful!\n");
-#elif LINUX_SOCKETS_IMPL
-    printf("Please use network_close(socket_fd), this function is windows only.\n");
-#endif
-
-}
 
 inline socket_t network_listen(const char *port) {
     struct addrinfo hints, *res;
@@ -335,12 +250,7 @@ inline socket_t network_connect(struct addrinfo *server_address) {
         return client_socket;
     }
     else {
-#ifdef WINSOCK_IMPL
-        network_win_errmsg(GetLastError()); // prints the exact error
-
-#elif LINUX_IMPL
         printf("Connection failed. %s\n", strerror(errno));
-#endif
 
         freeaddrinfo(server_address);
         network_close(client_socket);
@@ -392,12 +302,7 @@ inline socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size){
     }
     int bytes_recv = recv(socketfd, data, buffer_size, 0);
     if(bytes_recv < 0) {
-#ifdef WINSOCK_IMPL
-        network_win_errmsg(GetLastError()); // prints the exact error
-
-#elif LINUX_IMPL
         printf("Connection failed. %s\n", strerror(errno));
-#endif
         return -1;
     }
     return bytes_recv;
@@ -411,55 +316,32 @@ inline socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size
 }
 // Concurrency
 inline void network_set_nonblocking(socket_t sock) {
-#ifdef WINSOCK_IMPL
-    printf("Windows doesn't support epoll unfortunately!.\n");
-    return;
-#elif LINUX_IMPL
     int originslflags = fcntl(sock, F_GETFL, 0);
     if (fcntl(sock, F_SETFL, originslflags | O_NONBLOCK) < 0) {
         printf("fcntl F_SETFL O_NONBLOCK failed.\n");
         exit(EXIT_FAILURE);
     }
-#endif
-
-
 }
 
 inline void network_would_block(socket_t sock) {
-#ifdef WINSOCK_IMPL
-    printf("Windows doesn't support epoll unfortunately!.\n");
-    return;
-#elif LINUX_IMPL
     int originslflags = fcntl(sock, F_GETFL, 0);
     if (fcntl(sock, F_SETFL, originslflags & O_NONBLOCK) < 0) {
         printf("fcntl F_SETFL O_NONBLOCK failed.\n");
         exit(EXIT_FAILURE);
     }
-#endif
-
 }
 
 /* Epoll events */
 inline socket_t network_epoll_create(void) {
-#ifdef WINSOCK_IMPL
-    printf("Windows doesn't support epoll unfortunately!.\n");
-    return -1;
-#elif LINUX_IMPL
     int epollfd = epoll_create(1);
     if (epollfd < 0) {
         printf("epoll_create failed.\n");
         exit(EXIT_FAILURE);
     }
     return epollfd;
-#endif
-
 }
 
 inline void network_epoll_ctl(struct client_event_data *cdata) {
-#ifdef WINSOCK_IMPL
-    printf("Windows doesn't support epoll unfortunately!.\n");
-    return;
-#elif LINUX_IMPL
     struct epoll_event ev;
 
     int epollfd = cdata->efd;
@@ -481,38 +363,23 @@ inline void network_epoll_ctl(struct client_event_data *cdata) {
     }
     printf("ADDED EVENT\n");
     return;
-#endif
 }
 
 inline int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxevents, int timeout) {
-
-#ifdef WINSOCK_IMPL
-    printf("Windows doesn't support epoll unfortunately!.\n");
-    return -1;
-#elif LINUX_IMPL
     int nfds = epoll_wait(epollfd, events, maxevents, timeout);
     if (nfds < 0) {
         printf("epoll_wait failed.%s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
     return nfds;
-#endif
 }
 
 void network_epoll_close(socket_t epollfd) {
-#ifdef WINSOCK_IMPL
-    closesocket(socket);
-#elif LINUX_IMPL
-    close(socket);
-#endif
+    close(epollfd);
 }
 
 inline void network_close(socket_t socket) {
-#ifdef WINSOCK_IMPL
-    closesocket(socket);
-#elif LINUX_IMPL
     close(socket);
-#endif
 }
 
 static inline FILE* network_load_file(const char *filename) {
