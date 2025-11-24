@@ -94,6 +94,9 @@ socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size);
 // Guaranteed Delivery
 socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size); // TODO
 
+// utilities
+static void network_stopnew_connections(socket_t listenSocket);
+
 // closing socket
 void network_close(socket_t socket);
 
@@ -124,6 +127,11 @@ int network_epoll_wait(socket_t epollfd, struct epoll_event *events, int maxeven
 void network_epoll_close(socket_t epollfd); // Should close the event gracefully, after closing all the sockets it's managing
 
 #ifdef NETWORK_IMPLEMENTATION
+
+static void network_stopnew_connections(socket_t listenSocket){
+    network_close(listenSocket);
+    printf("No new connections will be accepted from now on!\n");
+}
 
 inline socket_t network_listen(const char *port) {
     struct addrinfo hints, *res;

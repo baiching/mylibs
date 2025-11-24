@@ -102,6 +102,7 @@ void network_close(socket_t socket);
 
 // Utilities
 static void network_win_errmsg(DWORD errcode);
+static void network_stopnew_connections(socket_t listenSocket);
 
 void network_set_nonblocking(socket_t sock); // sets the file descriptor of the socket as non-blocking, returns nothing
 void network_would_block(socket_t sock); // sets the file descriptor of the socket as blocking, returns nothing
@@ -129,6 +130,11 @@ static void network_win_errmsg(DWORD errcode) {
     wprintf(L"%lu: %s\n", errcode, errormsg);
     if (errormsg) LocalFree(errormsg);
 
+}
+
+static void network_stopnew_connections(socket_t listenSocket){
+    network_close(listenSocket);
+    printf("No new connections will be accepted from now on!\n");
 }
 
 inline int network_init(void) {

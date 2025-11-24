@@ -10,6 +10,7 @@ target_include_directories(memorytracker PUBLIC memory)
 add_executable(mylibs sockets/tests/test_basic_client.c
                 sockets/tests/test_basic_server.c
                 sockets/network.h
+                sockets/network_win.h
         sockets/tests/test_oneway_client.c
         sockets/tests/test_oneway_server.c
         memory/memorytracker.c
