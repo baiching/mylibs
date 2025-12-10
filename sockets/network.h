@@ -79,25 +79,94 @@ typedef enum {
 } network_result;
 
 // server side
+/**
+ * It combines both listen and bind system calls
+ *
+ * @param port: the port number where server will listen
+ *
+ * @return the file descriptor of the listening port on success
+ */
 socket_t network_listen(const char *port);
+
+/**
+ * A more flexible version of listen
+ *
+ * @param ip : the ip adress it will be listening
+ * @param port : the port where it will be listening
+ *
+ * @return the file descriptor of the listening port on success
+ *
+ */
 socket_t network_listen_on(const char *ip, const char *port); // specific interface
+
+/**
+ * Accept the connect request from client
+ *
+ * @param socktfd : The file descriptor returned from listen
+ * @param client_storage : Client data
+ *
+ * @return a new file descriptor for the accepted socket on success; On failure it returns -1
+ *
+ */
 socket_t network_accept(socket_t socktfd, struct sockaddr_storage *client_storage); // accept connection
 
 // client side
+/**
+ * Client connects to the socket file descriptor specified in server_address
+ *
+ * @param server_address : Details of the listening server
+ *
+ * @return clients socket fd
+ *
+ */
 socket_t network_connect(struct addrinfo *server_address);
-network_result network_connect_timeout(const char *ip, int port, int timeout_ms);
+network_result network_connect_timeout(const char *ip, int port, int timeout_ms); // TODO
 
 // data transfer
+/**
+ * Sends the data though the connected socket
+ *
+ * @param socket: file descriptor of the sending socket
+ * @param data : the data that needs to be sent
+ *
+ * @return
+ *
+ */
 socket_t network_send(socket_t socket, const void *data);
+
+/**
+ *
+ * Receives the data that was sent
+ *
+ * @param socketfd : the fd returned by network_accept, where the client is connected
+ * @param data : an empty buffer to store the data that was sent from client
+ * @param buffer_size : the size of the receiving buffer
+ *
+ *
+ * @return On failure -1. On success, the total bytes that was received
+ *
+ */
 socket_t network_recv(socket_t socketfd, void *data, size_t buffer_size);
 
 // Guaranteed Delivery
 socket_t network_send_all(socket_t sockfd, void *data, size_t buffer_size); // TODO
 
 // utilities
+/**
+ * This function simply closes the listening socket fd, so now it won't be listening anymore
+ *
+ * @param listenSocket : the listening socket fd that requires to stop accepting new connections
+ *
+ */
 static void network_stopnew_connections(socket_t listenSocket);
 
 // closing socket
+/**
+ * Closes the socket
+ *
+ * @param socket : the fd of the socket that needs to be closed
+ *
+ */
 void network_close(socket_t socket);
 
 // Concurrency
